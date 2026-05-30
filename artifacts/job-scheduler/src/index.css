@@ -27,9 +27,6 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
-  --shadow-warm-sm: var(--shadow-elevation-low);
-  --shadow-warm-md: var(--shadow-elevation-medium);
-  --shadow-warm-lg: var(--shadow-elevation-high);
 }
 
 :root {
@@ -54,27 +51,25 @@
   --ring: 8 51% 51%;
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: 'Playfair Display', serif;
-  --shadow-color: 35 28% 68%;
-  --shadow-elevation-low: 0px 1px 2px hsl(var(--shadow-color) / 0.25), 0px 2px 4px hsl(var(--shadow-color) / 0.12);
-  --shadow-elevation-medium: 0px 2px 4px hsl(var(--shadow-color) / 0.18), 0px 6px 14px hsl(var(--shadow-color) / 0.12), 0px 12px 24px hsl(var(--shadow-color) / 0.07), 0px 1px 0px hsl(0 0% 100% / 0.7) inset;
-  --shadow-elevation-high: 0px 4px 8px hsl(var(--shadow-color) / 0.2), 0px 12px 28px hsl(var(--shadow-color) / 0.15), 0px 28px 48px hsl(var(--shadow-color) / 0.1), 0px 1px 0px hsl(0 0% 100% / 0.85) inset, 0px -1px 0px hsl(var(--shadow-color) / 0.15) inset;
 }
 
 @layer base {
-  * { @apply border-border; }
+  * { @apply border-border; box-sizing: border-box; }
 
   html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    cursor: none;
   }
 
   body {
-    @apply font-sans bg-background text-foreground;
+    @apply font-sans text-foreground;
     background-color: hsl(40 20% 95%);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0.2'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.046'/%3E%3C/svg%3E");
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0.15'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.042'/%3E%3C/svg%3E");
     background-size: 300px 300px;
-    background-repeat: repeat;
+    overflow-x: hidden;
   }
 
   h1, h2, h3, h4 { @apply font-serif; }
@@ -82,39 +77,146 @@
   input[type=number]::-webkit-inner-spin-button,
   input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number] { -moz-appearance: textfield; }
+
+  button, a, [role="button"] { cursor: none; }
+
+  ::selection {
+    background: hsl(8 51% 51% / 0.2);
+    color: hsl(8 44% 36%);
+  }
 }
 
+/* ── Custom Cursor ── */
+#cursor-dot {
+  position: fixed;
+  top: 0; left: 0;
+  width: 6px; height: 6px;
+  background: hsl(8 51% 51%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10000;
+  transform: translate(-50%, -50%);
+  transition: width 0.2s, height 0.2s, background 0.2s;
+  will-change: transform;
+}
+#cursor-ring {
+  position: fixed;
+  top: 0; left: 0;
+  width: 32px; height: 32px;
+  border: 1.5px solid hsl(8 51% 51% / 0.5);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s ease, height 0.3s ease, border-color 0.3s ease, opacity 0.3s ease;
+  will-change: transform;
+}
+body.cursor-hover #cursor-dot { width: 10px; height: 10px; background: hsl(8 51% 45%); }
+body.cursor-hover #cursor-ring { width: 48px; height: 48px; border-color: hsl(8 51% 51% / 0.3); }
+body.cursor-click #cursor-dot { width: 5px; height: 5px; }
+body.cursor-click #cursor-ring { width: 24px; height: 24px; }
+
+/* ── Entry Veil ── */
+#entry-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: hsl(30 22% 92%);
+  transform-origin: top;
+  pointer-events: none;
+}
+
+/* ── Marquee ── */
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee-scroll 28s linear infinite;
+}
+.marquee-track-rev {
+  animation: marquee-scroll-rev 32s linear infinite;
+}
+@keyframes marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes marquee-scroll-rev {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+.marquee-wrap { overflow: hidden; }
+
+/* ── Ambient orbs ── */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(60px);
+  animation: orb-drift 14s ease-in-out infinite alternate;
+}
+@keyframes orb-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(20px, -15px) scale(1.06); }
+  100% { transform: translate(-10px, 10px) scale(0.96); }
+}
+
+/* ── Side dots ── */
+.side-dot { transition: transform 0.2s, background 0.2s; }
+.side-dot:hover { transform: scale(1.5); }
+
+/* ── Text gradient ── */
 .text-gradient {
-  background: linear-gradient(135deg, hsl(120 2% 17%) 0%, hsl(8 51% 51%) 60%, hsl(35 45% 55%) 100%);
+  background: linear-gradient(120deg, hsl(120 2% 17%) 0%, hsl(8 51% 51%) 55%, hsl(35 45% 52%) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.glass-panel {
-  background: hsl(30 25% 98% / 0.7);
-  backdrop-filter: blur(24px) saturate(1.5);
-  border: 1px solid hsl(38 25% 87% / 0.8);
+/* ── Terracotta block ── */
+.tc-block {
+  background: linear-gradient(168deg, hsl(14 42% 56%) 0%, hsl(10 46% 50%) 55%, hsl(8 52% 44%) 100%);
+  box-shadow: 0 3px 8px hsl(8 51% 22%/0.35), 0 8px 20px hsl(8 51% 22%/0.2),
+              0 1px 0 hsl(14 60% 70%/0.45) inset, 0 -2px 0 hsl(8 50% 28%/0.35) inset;
 }
 
-.terracotta-block {
-  background: linear-gradient(165deg, hsl(14 42% 56%) 0%, hsl(10 46% 50%) 55%, hsl(8 52% 44%) 100%);
-  box-shadow: 0px 3px 8px hsl(8 51% 22% / 0.35), 0px 8px 20px hsl(8 51% 22% / 0.2), 0px 1px 0 hsl(14 60% 70% / 0.45) inset, 0px -2px 0 hsl(8 50% 28% / 0.35) inset;
-}
-
-.ceramic-card {
+/* ── Ceramic card ── */
+.ceramic {
   background: linear-gradient(165deg, hsl(30 28% 99%) 0%, hsl(30 22% 96%) 100%);
   border: 1px solid hsl(38 22% 87%);
-  box-shadow: 0px 3px 6px hsl(35 25% 58% / 0.18), 0px 8px 20px hsl(35 22% 58% / 0.12), 0px 20px 36px hsl(35 20% 58% / 0.06), 0px 1px 0 hsl(0 0% 100% / 0.95) inset, 0px -1px 0 hsl(35 22% 72% / 0.25) inset;
+  box-shadow: 0 3px 6px hsl(35 25% 58%/0.18), 0 8px 20px hsl(35 22%58%/0.12),
+              0 20px 36px hsl(35 20%58%/0.06), 0 1px 0 hsl(0 0%100%/0.95) inset;
 }
 
-.step-number {
+/* ── Glass panel ── */
+.glass {
+  background: hsl(30 25% 98%/0.72);
+  backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid hsl(38 25% 87%/0.75);
+}
+
+/* ── Section line decoration ── */
+.section-rule {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, hsl(38 25% 82%) 30%, hsl(8 51% 51%/0.3) 50%, hsl(38 25% 82%) 70%, transparent 100%);
+}
+
+/* ── Scanline on hover ── */
+.scan-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: hsl(8 51% 51%/0.18);
+  pointer-events: none;
+  transform: translateY(-100%);
+  transition: transform 0s;
+}
+
+/* ── Number count-up style ── */
+.stat-number {
   font-family: 'Playfair Display', serif;
-  font-size: 5rem;
+  font-size: clamp(2rem, 4vw, 3rem);
   font-weight: 700;
   line-height: 1;
-  background: linear-gradient(180deg, hsl(8 51% 51% / 0.15) 0%, hsl(8 51% 51% / 0.04) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: hsl(120 2% 17%);
 }
+.stat-number.accent { color: hsl(8 51% 47%); }
