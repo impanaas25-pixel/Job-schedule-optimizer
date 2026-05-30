@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Inter:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -11,138 +11,110 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
-  --color-card-border: hsl(var(--card-border));
-
   --color-popover: hsl(var(--popover));
   --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-popover-border: hsl(var(--popover-border));
-
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-primary-border: var(--primary-border);
-
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-secondary-border: var(--secondary-border);
-
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-muted-border: var(--muted-border);
-
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-accent-border: var(--accent-border);
-
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-destructive-border: var(--destructive-border);
-
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
-
   --shadow-warm-sm: var(--shadow-elevation-low);
   --shadow-warm-md: var(--shadow-elevation-medium);
   --shadow-warm-lg: var(--shadow-elevation-high);
-  --shadow-warm-inner: inset 0 2px 6px 0 hsl(var(--shadow-color) / 0.18), inset 0 1px 2px 0 hsl(var(--shadow-color) / 0.12);
-  --shadow-deboss: inset 0 2px 8px hsl(var(--shadow-color) / 0.22), inset 0 1px 3px hsl(var(--shadow-color) / 0.15), inset 0 -1px 0 hsl(0 0% 100% / 0.6);
-  --shadow-raise: 0 1px 0 hsl(0 0% 100% / 0.5) inset, 0 -2px 0 hsl(var(--shadow-color) / 0.25) inset;
 }
 
 :root {
-  --background: 40 20% 95%;       /* #F4F2EE */
-  --foreground: 120 2% 17%;       /* #2A2B2A */
-
-  --card: 30 25% 98%;             /* #FCFAF8 */
+  --background: 40 20% 95%;
+  --foreground: 120 2% 17%;
+  --card: 30 25% 98%;
   --card-foreground: 120 2% 17%;
-  --card-border: 40 15% 88%;
-
   --popover: 30 25% 98%;
   --popover-foreground: 120 2% 17%;
-  --popover-border: 40 15% 88%;
-
-  --primary: 8 51% 51%;           /* #C05746 */
+  --primary: 8 51% 51%;
   --primary-foreground: 30 25% 98%;
-
-  --secondary: 40 15% 88%;        /* #E5E2DC */
+  --secondary: 40 15% 88%;
   --secondary-foreground: 120 2% 17%;
-
   --muted: 40 13% 91%;
-  --muted-foreground: 60 4% 53%;  /* #8C8C84 */
-
+  --muted-foreground: 60 4% 53%;
   --accent: 30 25% 98%;
   --accent-foreground: 120 2% 17%;
-
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 98%;
-
-  --border: 40 15% 88%;           /* #E5E2DC */
+  --border: 40 15% 88%;
   --input: 40 15% 88%;
   --ring: 8 51% 51%;
-
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: 'Playfair Display', serif;
-
-  /* Warm parchment shadow */
   --shadow-color: 35 28% 68%;
-  --shadow-elevation-low:
-    0px 1px 1px hsl(var(--shadow-color) / 0.25),
-    0px 2px 4px hsl(var(--shadow-color) / 0.12);
-  --shadow-elevation-medium:
-    0px 2px 2px hsl(var(--shadow-color) / 0.18),
-    0px 4px 10px hsl(var(--shadow-color) / 0.12),
-    0px 10px 20px hsl(var(--shadow-color) / 0.08),
-    0px 1px 0px hsl(0 0% 100% / 0.7) inset;
-  --shadow-elevation-high:
-    0px 4px 6px hsl(var(--shadow-color) / 0.2),
-    0px 8px 20px hsl(var(--shadow-color) / 0.15),
-    0px 20px 40px hsl(var(--shadow-color) / 0.1),
-    0px 1px 0px hsl(0 0% 100% / 0.8) inset,
-    0px -1px 0px hsl(var(--shadow-color) / 0.15) inset;
-
-  /* Terracotta block shadow (deeper, warmer) */
-  --shadow-terracotta:
-    0px 3px 6px hsl(8 51% 30% / 0.3),
-    0px 8px 18px hsl(8 51% 30% / 0.2),
-    0px 1px 0px hsl(8 60% 70% / 0.5) inset,
-    0px -2px 0px hsl(8 51% 30% / 0.3) inset;
-
-  /* Copper axis glow */
-  --copper: 38 30% 88%;
-  --copper-dark: 35 22% 72%;
+  --shadow-elevation-low: 0px 1px 2px hsl(var(--shadow-color) / 0.25), 0px 2px 4px hsl(var(--shadow-color) / 0.12);
+  --shadow-elevation-medium: 0px 2px 4px hsl(var(--shadow-color) / 0.18), 0px 6px 14px hsl(var(--shadow-color) / 0.12), 0px 12px 24px hsl(var(--shadow-color) / 0.07), 0px 1px 0px hsl(0 0% 100% / 0.7) inset;
+  --shadow-elevation-high: 0px 4px 8px hsl(var(--shadow-color) / 0.2), 0px 12px 28px hsl(var(--shadow-color) / 0.15), 0px 28px 48px hsl(var(--shadow-color) / 0.1), 0px 1px 0px hsl(0 0% 100% / 0.85) inset, 0px -1px 0px hsl(var(--shadow-color) / 0.15) inset;
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
 
   html {
+    scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     @apply font-sans bg-background text-foreground;
-    background-color: hsl(var(--background));
-    /* SVG noise texture — heavyweight paper feel */
-    background-image:
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+    background-color: hsl(40 20% 95%);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0.2'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.046'/%3E%3C/svg%3E");
     background-size: 300px 300px;
     background-repeat: repeat;
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-serif;
-  }
+  h1, h2, h3, h4 { @apply font-serif; }
 
-  /* Number inputs — no spinners */
   input[type=number]::-webkit-inner-spin-button,
-  input[type=number]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number] { -moz-appearance: textfield; }
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, hsl(120 2% 17%) 0%, hsl(8 51% 51%) 60%, hsl(35 45% 55%) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glass-panel {
+  background: hsl(30 25% 98% / 0.7);
+  backdrop-filter: blur(24px) saturate(1.5);
+  border: 1px solid hsl(38 25% 87% / 0.8);
+}
+
+.terracotta-block {
+  background: linear-gradient(165deg, hsl(14 42% 56%) 0%, hsl(10 46% 50%) 55%, hsl(8 52% 44%) 100%);
+  box-shadow: 0px 3px 8px hsl(8 51% 22% / 0.35), 0px 8px 20px hsl(8 51% 22% / 0.2), 0px 1px 0 hsl(14 60% 70% / 0.45) inset, 0px -2px 0 hsl(8 50% 28% / 0.35) inset;
+}
+
+.ceramic-card {
+  background: linear-gradient(165deg, hsl(30 28% 99%) 0%, hsl(30 22% 96%) 100%);
+  border: 1px solid hsl(38 22% 87%);
+  box-shadow: 0px 3px 6px hsl(35 25% 58% / 0.18), 0px 8px 20px hsl(35 22% 58% / 0.12), 0px 20px 36px hsl(35 20% 58% / 0.06), 0px 1px 0 hsl(0 0% 100% / 0.95) inset, 0px -1px 0 hsl(35 22% 72% / 0.25) inset;
+}
+
+.step-number {
+  font-family: 'Playfair Display', serif;
+  font-size: 5rem;
+  font-weight: 700;
+  line-height: 1;
+  background: linear-gradient(180deg, hsl(8 51% 51% / 0.15) 0%, hsl(8 51% 51% / 0.04) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
