@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Job Scheduling Optimizer"
+version = "1.0.0"
+id = "artifacts/job-scheduler"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22101
+
+[services.development]
+run = "pnpm --filter @workspace/job-scheduler run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/job-scheduler", "run", "build" ]
+publicDir = "artifacts/job-scheduler/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22101"
+BASE_PATH = "/"
