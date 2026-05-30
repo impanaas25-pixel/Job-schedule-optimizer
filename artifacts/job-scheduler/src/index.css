@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -42,82 +42,76 @@
 
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
-  
+
   --shadow-warm-sm: var(--shadow-elevation-low);
   --shadow-warm-md: var(--shadow-elevation-medium);
-  --shadow-warm-inner: inset 0 2px 4px 0 hsl(var(--shadow-color) / 0.2);
+  --shadow-warm-lg: var(--shadow-elevation-high);
+  --shadow-warm-inner: inset 0 2px 6px 0 hsl(var(--shadow-color) / 0.18), inset 0 1px 2px 0 hsl(var(--shadow-color) / 0.12);
+  --shadow-deboss: inset 0 2px 8px hsl(var(--shadow-color) / 0.22), inset 0 1px 3px hsl(var(--shadow-color) / 0.15), inset 0 -1px 0 hsl(0 0% 100% / 0.6);
+  --shadow-raise: 0 1px 0 hsl(0 0% 100% / 0.5) inset, 0 -2px 0 hsl(var(--shadow-color) / 0.25) inset;
 }
 
 :root {
-  --background: 40 20% 95%; /* #F4F2EE */
-  --foreground: 120 2% 17%; /* #2A2B2A */
-  
-  --card: 30 25% 98%; /* #FCFAF8 */
+  --background: 40 20% 95%;       /* #F4F2EE */
+  --foreground: 120 2% 17%;       /* #2A2B2A */
+
+  --card: 30 25% 98%;             /* #FCFAF8 */
   --card-foreground: 120 2% 17%;
   --card-border: 40 15% 88%;
-  
+
   --popover: 30 25% 98%;
   --popover-foreground: 120 2% 17%;
   --popover-border: 40 15% 88%;
-  
-  --primary: 8 51% 51%; /* #C05746 */
+
+  --primary: 8 51% 51%;           /* #C05746 */
   --primary-foreground: 30 25% 98%;
-  
-  --secondary: 40 15% 88%; /* #E5E2DC */
+
+  --secondary: 40 15% 88%;        /* #E5E2DC */
   --secondary-foreground: 120 2% 17%;
-  
-  --muted: 40 15% 88%;
-  --muted-foreground: 60 4% 53%; /* #8C8C84 */
-  
+
+  --muted: 40 13% 91%;
+  --muted-foreground: 60 4% 53%;  /* #8C8C84 */
+
   --accent: 30 25% 98%;
   --accent-foreground: 120 2% 17%;
-  
-  --destructive: 0 84.2% 60.2%;
+
+  --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 98%;
-  
-  --border: 40 15% 88%; /* #E5E2DC */
+
+  --border: 40 15% 88%;           /* #E5E2DC */
   --input: 40 15% 88%;
   --ring: 8 51% 51%;
 
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: 'Playfair Display', serif;
-  
-  --shadow-color: 38 22% 71%; /* #C4B8A4 */
-  --shadow-elevation-low:
-    0px 1px 2px hsl(var(--shadow-color) / 0.2),
-    0px 2px 4px hsl(var(--shadow-color) / 0.1);
-  --shadow-elevation-medium:
-    0px 2px 4px hsl(var(--shadow-color) / 0.15),
-    0px 4px 8px hsl(var(--shadow-color) / 0.1),
-    0px 8px 16px hsl(var(--shadow-color) / 0.05);
-}
 
-.dark {
-  --background: 120 2% 17%;
-  --foreground: 40 20% 95%;
-  --card: 120 3% 20%;
-  --card-foreground: 40 20% 95%;
-  --card-border: 60 4% 53%;
-  --popover: 120 3% 20%;
-  --popover-foreground: 40 20% 95%;
-  --popover-border: 60 4% 53%;
-  --primary: 8 51% 51%;
-  --primary-foreground: 30 25% 98%;
-  --secondary: 120 4% 25%;
-  --secondary-foreground: 40 15% 88%;
-  --muted: 120 4% 25%;
-  --muted-foreground: 60 4% 53%;
-  --accent: 120 4% 25%;
-  --accent-foreground: 40 20% 95%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 120 4% 30%;
-  --input: 120 4% 30%;
-  --ring: 8 51% 51%;
-  
-  --shadow-color: 0 0% 0%;
-  --shadow-elevation-low: 0px 1px 2px hsl(var(--shadow-color) / 0.5);
-  --shadow-elevation-medium: 0px 4px 8px hsl(var(--shadow-color) / 0.5);
+  /* Warm parchment shadow */
+  --shadow-color: 35 28% 68%;
+  --shadow-elevation-low:
+    0px 1px 1px hsl(var(--shadow-color) / 0.25),
+    0px 2px 4px hsl(var(--shadow-color) / 0.12);
+  --shadow-elevation-medium:
+    0px 2px 2px hsl(var(--shadow-color) / 0.18),
+    0px 4px 10px hsl(var(--shadow-color) / 0.12),
+    0px 10px 20px hsl(var(--shadow-color) / 0.08),
+    0px 1px 0px hsl(0 0% 100% / 0.7) inset;
+  --shadow-elevation-high:
+    0px 4px 6px hsl(var(--shadow-color) / 0.2),
+    0px 8px 20px hsl(var(--shadow-color) / 0.15),
+    0px 20px 40px hsl(var(--shadow-color) / 0.1),
+    0px 1px 0px hsl(0 0% 100% / 0.8) inset,
+    0px -1px 0px hsl(var(--shadow-color) / 0.15) inset;
+
+  /* Terracotta block shadow (deeper, warmer) */
+  --shadow-terracotta:
+    0px 3px 6px hsl(8 51% 30% / 0.3),
+    0px 8px 18px hsl(8 51% 30% / 0.2),
+    0px 1px 0px hsl(8 60% 70% / 0.5) inset,
+    0px -2px 0px hsl(8 51% 30% / 0.3) inset;
+
+  /* Copper axis glow */
+  --copper: 38 30% 88%;
+  --copper-dark: 35 22% 72%;
 }
 
 @layer base {
@@ -125,13 +119,30 @@
     @apply border-border;
   }
 
-  body {
-    @apply font-sans antialiased bg-background text-foreground;
-    background-color: hsl(var(--background));
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  
+
+  body {
+    @apply font-sans bg-background text-foreground;
+    background-color: hsl(var(--background));
+    /* SVG noise texture — heavyweight paper feel */
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+    background-size: 300px 300px;
+    background-repeat: repeat;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-serif;
   }
+
+  /* Number inputs — no spinners */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type=number] { -moz-appearance: textfield; }
 }
