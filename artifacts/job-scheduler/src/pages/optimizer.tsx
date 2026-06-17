@@ -9,49 +9,112 @@ import {
 import {
   X, Check, Play, ArrowDown, Zap, BarChart2,
   Clock, Trophy, ChevronRight, Layers, Info,
+  Sliders, HelpCircle, LogOut, Save,
 } from "lucide-react";
+import { projectsApi, scheduleApi, ApiError } from "@/lib/api";
+import HistoryModal from "@/components/HistoryModal";
 
 // ═══════════════════════════════════════════════════════════
 //  TYPES
 // ═══════════════════════════════════════════════════════════
-type Job    = { id: string; name: string; deadline: number; profit: number };
-type Result = { accepted: Job[]; rejected: Job[]; totalProfit: number };
+type Item = { id: string; name: string; weight: number; value: number };
+type AcceptedItem = Item & { fraction: number; takenWeight: number; takenValue: number; scheduledDay?: number };
+type DecisionStep = {
+  item: Item;
+  remainingCapacityBefore: number;
+  decision: "pack" | "slice" | "skip" | "ignore";
+  takenWeight: number;
+  takenValue: number;
+  remainingCapacityAfter: number;
+};
+type KnapsackResult = {
+  accepted: AcceptedItem[];
+  rejected: Item[];
+  totalValue: number;
+  totalWeight: number;
+  decisionLog: DecisionStep[];
+};
 type Toast  = { id: string; title: string; sub?: string };
 type Spark  = { id: string; x: number; y: number; angle: number; dist: number; color: string };
 
 // ═══════════════════════════════════════════════════════════
-//  ALGORITHM
+//  ALGORITHMS
 // ═══════════════════════════════════════════════════════════
-function runGreedy(jobs: Job[]): Result {
-  const sorted = [...jobs].sort((a, b) => b.profit - a.profit);
-  if (!sorted.length) return { accepted: [], rejected: [], totalProfit: 0 };
-  const max   = Math.max(...sorted.map(j => j.deadline));
-  const slots = new Array(max + 1).fill(null) as (Job | null)[];
-  const accepted: Job[] = [], rejected: Job[] = [];
-  for (const job of sorted) {
-    let placed = false;
-    for (let s = job.deadline; s >= 1; s--) {
-      if (!slots[s]) { slots[s] = job; accepted.push(job); placed = true; break; }
+function runFractional(items: Item[], capacity: number): KnapsackResult {
+  // Sort projects by contract value (value) descending
+  const sorted = [...items].sort((a, b) => b.value - a.value);
+  if (!sorted.length) return { accepted: [], rejected: [], totalValue: 0, totalWeight: 0, decisionLog: [] };
+
+  const accepted: AcceptedItem[] = [];
+  const rejected: Item[] = [];
+  const decisionLog: DecisionStep[] = [];
+  
+  // Slots: index 1 to capacity (1-indexed for days)
+  const slots = new Array(capacity + 1).fill(null);
+  let totalValue = 0;
+  let totalWeight = 0;
+
+  for (const item of sorted) {
+    let scheduledDay = -1;
+    // Greedy Latest Slot Strategy: search from min(capacity, deadline) down to 1
+    const startSlot = Math.min(capacity, item.weight);
+    for (let day = startSlot; day >= 1; day--) {
+      if (slots[day] === null) {
+        slots[day] = item;
+        scheduledDay = day;
+        break;
+      }
     }
-    if (!placed) rejected.push(job);
+
+    if (scheduledDay !== -1) {
+      accepted.push({
+        ...item,
+        fraction: 1.0,
+        takenWeight: 1, // each job takes exactly 1 slot/day
+        takenValue: item.value,
+      });
+      totalValue += item.value;
+      totalWeight += 1;
+      
+      decisionLog.push({
+        item,
+        remainingCapacityBefore: slots.filter(s => s === null).length + 1,
+        decision: "pack",
+        takenWeight: 1,
+        takenValue: item.value,
+        remainingCapacityAfter: slots.filter(s => s === null).length,
+      });
+    } else {
+      rejected.push(item);
+      decisionLog.push({
+        item,
+        remainingCapacityBefore: slots.filter(s => s === null).length,
+        decision: "skip",
+        takenWeight: 0,
+        takenValue: 0,
+        remainingCapacityAfter: slots.filter(s => s === null).length,
+      });
+    }
   }
-  return { accepted, rejected, totalProfit: accepted.reduce((s, j) => s + j.profit, 0) };
+
+  // Attach the scheduled day to the accepted item
+  const acceptedWithDay = accepted.map(acc => {
+    const day = slots.indexOf(slots.find(s => s && s.id === acc.id));
+    return { ...acc, scheduledDay: day };
+  });
+
+  return { accepted: acceptedWithDay as any, rejected, totalValue, totalWeight, decisionLog };
+}
+
+function runGreedyZeroOne(items: Item[], capacity: number): KnapsackResult {
+  return runFractional(items, capacity);
 }
 
 // ═══════════════════════════════════════════════════════════
 //  CONSTANTS
 // ═══════════════════════════════════════════════════════════
-const SAMPLE: Omit<Job, "id">[] = [
-  { name: "Lighthouse",       deadline: 2, profit: 10000 },
-  { name: "Harbor Bridge",    deadline: 1, profit: 1900  },
-  { name: "City Hall",        deadline: 2, profit: 2700  },
-  { name: "Museum Wing",      deadline: 1, profit: 2500  },
-  { name: "Park Pavilion",    deadline: 3, profit: 1500  },
-  { name: "Observatory",      deadline: 3, profit: 11000 },
-  { name: "Waterfront Plaza", deadline: 2, profit: 9000  },
-  { name: "Grand Library",    deadline: 4, profit: 20000 },
-];
-const SECTIONS = ["hero", "how-it-works", "algorithm", "optimizer"];
+
+const SECTIONS = ["hero", "algorithm", "optimizer"];
 const TC_COLORS = [
   [192, 87,  70 ],  // terracotta
   [196,152,110 ],  // copper
@@ -72,7 +135,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 const SparkCtx = createContext<(x: number, y: number, count?: number) => void>(() => {});
 
 // ═══════════════════════════════════════════════════════════
-//  PARTICLE CANVAS  ─ the beating heart of the "alive" feel
+//  PARTICLE CANVAS
 // ═══════════════════════════════════════════════════════════
 function ParticleCanvas() {
   const ref    = useRef<HTMLCanvasElement>(null);
@@ -95,7 +158,6 @@ function ParticleCanvas() {
     const onMouse = (e: MouseEvent) => { mouse.current = { x: e.clientX, y: e.clientY }; };
     window.addEventListener("mousemove", onMouse);
 
-    // ── particle definition
     type P = {
       x: number; y: number; vx: number; vy: number;
       size: number; col: readonly [number,number,number];
@@ -132,29 +194,24 @@ function ParticleCanvas() {
       const mx = mouse.current.x, my = mouse.current.y;
 
       for (const p of particles) {
-        // drift + wobble
         p.x += p.vx + Math.sin(frame * 0.009 + p.phase) * 0.18;
         p.y += p.vy;
         p.phase += 0.004;
 
-        // gentle mouse attraction (warm, not repulsion)
         const dx = mx - p.x, dy = my - p.y;
         const d2 = dx * dx + dy * dy;
-        if (d2 < 14400) { // 120px
+        if (d2 < 14400) {
           const d = Math.sqrt(d2);
           p.x += (dx / d) * 0.55 * (1 - d / 120);
           p.y += (dy / d) * 0.55 * (1 - d / 120);
         }
 
-        // twinkle
         p.op += p.opDir;
         if (p.op > p.maxOp) { p.op = p.maxOp; p.opDir *= -1; }
         else if (p.op < 0)  { p.op = 0; p.opDir *= -1; }
 
-        // respawn at bottom when above screen
         if (p.y < -30) Object.assign(p, mkParticle(false));
 
-        // ── draw
         const [r, g, b] = p.col;
         ctx.save();
         if (p.kind === "bloom") {
@@ -202,8 +259,9 @@ function ParticleCanvas() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  MOUSE BLOOM  ─ warm ambient light following cursor
+//  MOUSE BLOOM
 // ═══════════════════════════════════════════════════════════
+// ambient soft light trailing the cursor
 function MouseBloom() {
   const bx = useSpring(0, { stiffness: 80, damping: 22 });
   const by = useSpring(0, { stiffness: 80, damping: 22 });
@@ -216,8 +274,9 @@ function MouseBloom() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SPARKLE BURST  ─ exploding sparks on actions
+//  SPARKLE BURST
 // ═══════════════════════════════════════════════════════════
+// clicks trigger an burst of colored particles
 function SparkleBurst({ sparks, onDone }: { sparks: Spark[]; onDone: (id: string) => void }) {
   return (
     <>
@@ -247,7 +306,7 @@ function Cursor() {
     const mv = (e: MouseEvent) => { dx.set(e.clientX); dy.set(e.clientY); rx.set(e.clientX); ry.set(e.clientY); };
     const hv = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      document.body.classList.toggle("cur-hover", !!t.closest("button,a,[role=button],input,label"));
+      document.body.classList.toggle("cur-hover", !!t.closest("button,a,[role=button],input,label,input[type=range]"));
     };
     const dn = () => document.body.classList.add("cur-click");
     const up = () => document.body.classList.remove("cur-click");
@@ -288,8 +347,8 @@ function EntryVeil() {
 // ═══════════════════════════════════════════════════════════
 function SideNav({ active }: { active: string }) {
   const labels: Record<string, string> = {
-    "hero": "Home", "how-it-works": "How It Works",
-    "algorithm": "Algorithm", "optimizer": "Optimizer",
+    "hero": "Home",
+    "algorithm": "Algorithms", "optimizer": "Live Optimizer"
   };
   const scrollTo = (id: string) =>
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -317,8 +376,8 @@ function SideNav({ active }: { active: string }) {
 // ═══════════════════════════════════════════════════════════
 function Marquee({ reverse = false }: { reverse?: boolean }) {
   const items = [
-    "Greedy Algorithm", "O(n log n)", "Profit Maximisation", "₹ Rupees",
-    "Job Scheduling", "Deadline Assignment", "Optimal Sequence", "Unit Jobs",
+    "Knapsack Suite", "Fractional Greedy", "0/1 Greedy Heuristic", "₹ Value Density",
+    "Greedy Trace Log", "Dynamic Weights", "Value-to-Weight Ratio", "Resource Capacity",
   ];
   const doubled = [...items, ...items];
   return (
@@ -338,7 +397,7 @@ function Marquee({ reverse = false }: { reverse?: boolean }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  MAGNETIC BUTTON  ─ leans toward cursor like a living thing
+//  MAGNETIC BUTTON
 // ═══════════════════════════════════════════════════════════
 function MagneticButton({
   children, className, style, onClick, disabled, "data-testid": dtid, type, tabIndex,
@@ -381,7 +440,7 @@ function MagneticButton({
 }
 
 // ═══════════════════════════════════════════════════════════
-//  TILT CARD  ─ 3D perspective + moving shine
+//  TILT CARD
 // ═══════════════════════════════════════════════════════════
 function TiltCard({
   children, className, style, shimmer,
@@ -414,7 +473,6 @@ function TiltCard({
       style={{ rotateX: srX, rotateY: srY, transformPerspective: 900, ...style }}
       className={`relative overflow-hidden ${shimmer ? "shimmer-sweep" : ""} ${className ?? ""}`}
     >
-      {/* moving shine layer */}
       <motion.div className="absolute inset-0 pointer-events-none z-20"
         style={{
           background: useTransform(shineX, v =>
@@ -456,9 +514,9 @@ function DebossedInput({
 }) {
   const [focused, setFocused] = useState(false);
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-[10px] font-sans font-semibold tracking-[0.18em] uppercase"
-        style={{ color: "hsl(14 40% 78%)" }}>{label}</label>
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <label className="text-[10px] font-sans font-semibold tracking-[0.18em] uppercase block truncate overflow-hidden"
+        style={{ color: "hsl(14 40% 78%)" }} title={label}>{label}</label>
       <div className="relative rounded-sm overflow-hidden transition-all duration-300"
         style={{
           background: focused ? "hsl(30 22% 94%)" : "hsl(38 18% 91%)",
@@ -485,7 +543,7 @@ function DebossedInput({
 // ═══════════════════════════════════════════════════════════
 //  COUNT-UP NUMBER
 // ═══════════════════════════════════════════════════════════
-function CountUp({ to, prefix = "" }: { to: number; prefix?: string }) {
+function CountUp({ to, prefix = "", suffix = "" }: { to: number; prefix?: string; suffix?: string }) {
   const ref    = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: "-40px" });
   useEffect(() => {
@@ -493,17 +551,23 @@ function CountUp({ to, prefix = "" }: { to: number; prefix?: string }) {
     const node = ref.current;
     const ctrl = animate(0, to, {
       duration: 1.8, ease: "easeOut",
-      onUpdate: v => { node.textContent = prefix + Math.floor(v).toLocaleString("en-IN"); },
+      onUpdate: v => { node.textContent = prefix + Math.floor(v).toLocaleString("en-IN") + suffix; },
     });
     return () => ctrl.stop();
-  }, [inView, to, prefix]);
-  return <span ref={ref}>{prefix}0</span>;
+  }, [inView, to, prefix, suffix]);
+  return <span ref={ref}>{prefix}0{suffix}</span>;
 }
 
 // ═══════════════════════════════════════════════════════════
 //  NAVBAR
 // ═══════════════════════════════════════════════════════════
-function Navbar({ onScrollTo }: { onScrollTo: (id: string) => void }) {
+function Navbar({
+  onScrollTo,
+  onLogout,
+}: {
+  onScrollTo: (id: string) => void;
+  onLogout?: () => void;
+}) {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 50);
@@ -528,13 +592,13 @@ function Navbar({ onScrollTo }: { onScrollTo: (id: string) => void }) {
             <Layers size={15} style={{ color: "hsl(30 40% 97%)" }} strokeWidth={2} />
           </div>
           <div className="flex flex-col leading-none">
-            <span className="font-serif font-bold text-lg" style={{ color: "hsl(120 2% 17%)" }}>JobOptimizer</span>
-            <span className="font-sans text-[9px] tracking-widest uppercase" style={{ color: "hsl(60 4% 56%)" }}>Greedy Scheduler</span>
+            <span className="font-serif font-bold text-lg" style={{ color: "hsl(120 2% 17%)" }}>StudioYield</span>
+            <span className="font-sans text-[9px] tracking-widest uppercase" style={{ color: "hsl(60 4% 56%)" }}>Schedule Optimizer</span>
           </div>
         </motion.div>
         <nav className="hidden md:flex items-center gap-8">
-          {["How it Works", "Algorithm", "Optimizer"].map((item, i) => {
-            const id = ["how-it-works", "algorithm", "optimizer"][i];
+          {["Algorithms", "Optimizer"].map((item, i) => {
+            const id = ["algorithm", "optimizer"][i];
             return (
               <button key={item} onClick={() => onScrollTo(id)}
                 className="font-sans text-sm font-medium relative group transition-opacity hover:opacity-80"
@@ -546,13 +610,25 @@ function Navbar({ onScrollTo }: { onScrollTo: (id: string) => void }) {
             );
           })}
         </nav>
-        <MagneticButton
-          onClick={() => onScrollTo("optimizer")}
-          className="tc-block px-5 py-2.5 rounded-sm font-sans text-sm font-semibold"
-          style={{ color: "hsl(30 40% 97%)", letterSpacing: "0.025em" }}
-          data-testid="button-nav-cta">
-          Open Tool
-        </MagneticButton>
+        <div className="flex items-center gap-3">
+          <MagneticButton
+            onClick={() => onScrollTo("optimizer")}
+            className="tc-block px-5 py-2.5 rounded-sm font-sans text-sm font-semibold"
+            style={{ color: "hsl(30 40% 97%)", letterSpacing: "0.025em" }}
+            data-testid="button-nav-cta">
+            Open Visualizer
+          </MagneticButton>
+          {onLogout && (
+            <MagneticButton
+              onClick={onLogout}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-sm font-sans text-xs font-medium hover:bg-white/60 transition-all border"
+              style={{ color: "hsl(60 4% 50%)", borderColor: "hsl(38 22% 82%)" }}
+              data-testid="button-sign-out">
+              <LogOut size={13} />
+              Sign Out
+            </MagneticButton>
+          )}
+        </div>
       </div>
     </motion.nav>
   );
@@ -565,7 +641,6 @@ function Hero({ onScrollTo }: { onScrollTo: (id: string) => void }) {
   const burst = useContext(SparkCtx);
   const sectionRef = useRef<HTMLElement>(null);
 
-  // Mouse-parallax for floating cards
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
   useEffect(() => {
@@ -580,15 +655,14 @@ function Hero({ onScrollTo }: { onScrollTo: (id: string) => void }) {
   }, []);
 
   const floaters = [
-    { name: "Grand Library",    profit: 20000, deadline: 4, left: "68%", top: "16%", depth: 22 },
-    { name: "Observatory",      profit: 11000, deadline: 3, left: "76%", top: "52%", depth: 14 },
-    { name: "Lighthouse",       profit: 10000, deadline: 2, left: "60%", top: "74%", depth: 30 },
-    { name: "Waterfront Plaza", profit: 9000,  deadline: 2, left: "84%", top: "34%", depth: 18 },
+    { name: "E-commerce Website",     value: 25000, weight: 4, left: "68%", top: "16%", depth: 22 },
+    { name: "Brand Identity",         value: 15000, weight: 2, left: "76%", top: "52%", depth: 14 },
+    { name: "Social Media Campaign",   value: 10000, weight: 1, left: "60%", top: "74%", depth: 30 },
+    { name: "Product Promo Video",     value: 20000, weight: 2, left: "84%", top: "34%", depth: 18 },
   ];
 
   return (
     <section id="hero" ref={sectionRef} className="relative min-h-screen flex items-center overflow-hidden">
-      {/* Ambient orbs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {[
           { w: 700, h: 700, t: "-15%", r: "-8%",  c: "hsl(8 51% 51%/0.07)", dur: "16s"  },
@@ -606,7 +680,6 @@ function Hero({ onScrollTo }: { onScrollTo: (id: string) => void }) {
         ))}
       </div>
 
-      {/* Parallax floating cards */}
       <div className="absolute inset-0 pointer-events-none hidden lg:block">
         {floaters.map((f, i) => {
           const px = useTransform(mouseX, [-0.5, 0.5], [-f.depth, f.depth]);
@@ -626,9 +699,9 @@ function Hero({ onScrollTo }: { onScrollTo: (id: string) => void }) {
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-sm"
                   style={{ background: "linear-gradient(180deg,hsl(10 50% 56%),hsl(8 52% 44%))" }} />
                 <p className="font-serif font-semibold text-sm pl-2 mb-1.5" style={{ color: "hsl(120 2% 17%)" }}>{f.name}</p>
-                <div className="flex justify-between pl-2">
-                  <span className="font-sans text-[11px]" style={{ color: "hsl(60 4% 55%)" }}>DL {f.deadline}</span>
-                  <span className="font-sans text-xs font-bold" style={{ color: "hsl(8 51% 50%)" }}>{fmt(f.profit)}</span>
+                <div className="flex justify-between pl-2 font-sans text-xs">
+                  <span style={{ color: "hsl(60 4% 55%)" }}>Day {f.weight}</span>
+                  <span className="font-bold" style={{ color: "hsl(8 51% 50%)" }}>{fmt(f.value)}</span>
                 </div>
               </motion.div>
             </motion.div>
@@ -636,51 +709,38 @@ function Hero({ onScrollTo }: { onScrollTo: (id: string) => void }) {
         })}
       </div>
 
-      {/* Hero copy */}
       <div className="relative z-10 max-w-7xl mx-auto px-8 pt-28 pb-24 w-full">
         <div className="max-w-3xl">
-
           <motion.div
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 1.2 }}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-9"
-            style={{ background: "hsl(8 51% 51%/0.09)", border: "1px solid hsl(8 51% 51%/0.22)" }}>
+            style={{ background: "hsl(8 51% 51%/0.09)", border: "1px solid hsl(8 51% 51%/0.2)" }}>
             <Zap size={11} style={{ color: "hsl(8 51% 51%)" }} />
             <span className="font-sans text-[11px] font-semibold tracking-[0.14em] uppercase" style={{ color: "hsl(8 44% 44%)" }}>
-              Greedy Algorithm · O(n log n) · ₹ Rupees
+              Greedy Latest Slot Strategy · ₹ Indian Rupees
             </span>
           </motion.div>
-
-          <div className="overflow-hidden mb-2">
-            <motion.h1
-              initial={{ y: "102%" }}
-              animate={{ y: 0 }}
-              transition={{ duration: 0.88, delay: 1.3, ease: [0.22, 1, 0.36, 1] }}
-              className="font-serif font-bold leading-[1.02]"
-              style={{ fontSize: "clamp(3rem,7.5vw,5.6rem)", color: "hsl(120 2% 17%)" }}>
-              Schedule Jobs.
-            </motion.h1>
-          </div>
+ 
           <div className="overflow-hidden mb-8">
             <motion.h1
               initial={{ y: "102%" }}
               animate={{ y: 0 }}
-              transition={{ duration: 0.88, delay: 1.48, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: 0.88, delay: 1.3, ease: [0.22, 1, 0.36, 1] }}
               className="font-serif font-bold italic leading-[1.02] text-gradient"
               style={{ fontSize: "clamp(3rem,7.5vw,5.6rem)" }}>
-              Maximise Profit.
+              Job Scheduling<br />Optimization.
             </motion.h1>
           </div>
-
+ 
           <motion.p
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65, delay: 1.65 }}
             className="font-sans text-lg font-light leading-relaxed mb-12 max-w-xl"
             style={{ color: "hsl(60 4% 44%)" }}>
-            Enter your jobs with deadlines and profit values in ₹. The Greedy Scheduler
-            finds the mathematically optimal assignment — instantly, right in your browser.
+            Maximize your studio's weekly earnings. Our algorithm strategically places high-value client contracts into your limited work week to ensure you never miss a deadline.
           </motion.p>
 
           <motion.div
@@ -698,19 +758,10 @@ function Hero({ onScrollTo }: { onScrollTo: (id: string) => void }) {
               style={{ color: "hsl(30 40% 97%)", letterSpacing: "0.025em" }}
               data-testid="button-hero-cta">
               <Play size={15} fill="currentColor" />
-              Try the Optimizer
+              Try the Visualizer
             </MagneticButton>
-            <button onClick={() => onScrollTo("how-it-works")}
-              className="flex items-center gap-2 font-sans text-sm font-medium group"
-              style={{ color: "hsl(60 4% 50%)" }}>
-              See how it works
-              <motion.span animate={{ x: [0, 4, 0] }} transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}>
-                <ChevronRight size={15} />
-              </motion.span>
-            </button>
           </motion.div>
 
-          {/* Stat strip */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -718,9 +769,9 @@ function Hero({ onScrollTo }: { onScrollTo: (id: string) => void }) {
             className="grid grid-cols-3 gap-0 mt-20 pt-10"
             style={{ borderTop: "1px solid hsl(38 22% 86%)" }}>
             {[
-              { label: "Algorithm",   val: "Greedy"    },
+              { label: "Methodology", val: "Latest Slot Strategy" },
               { label: "Complexity",  val: "O(n log n)" },
-              { label: "Currency",    val: "₹ INR"     },
+              { label: "Currency",    val: "₹ INR" },
             ].map(s => (
               <div key={s.label} className="flex flex-col gap-1 pr-8">
                 <span className="font-serif font-bold text-2xl" style={{ color: "hsl(120 2% 17%)" }}>{s.val}</span>
@@ -731,7 +782,6 @@ function Hero({ onScrollTo }: { onScrollTo: (id: string) => void }) {
         </div>
       </div>
 
-      {/* Scroll hint */}
       <motion.div
         className="absolute bottom-10 left-8 flex flex-col items-center gap-2 z-10"
         initial={{ opacity: 0 }}
@@ -753,21 +803,21 @@ function HowItWorks() {
   const steps = [
     {
       n: "01", icon: <Layers size={22} strokeWidth={1.5} />,
-      title: "Add Your Jobs",
-      body: "Enter each job with a name, a deadline (1–10 time slots), and its profit in ₹ Rupees. Each job takes exactly one unit of time.",
-      tip: "Higher-profit jobs are always prioritised by the algorithm.",
+      title: "Queue Projects",
+      body: "Enter creative projects with deadlines (Day 1 to 10) and contract values in ₹. Adjust the work week capacity slider to set your available days.",
+      tip: "We prioritize your highest-paying client contracts first to guarantee maximum revenue.",
     },
     {
-      n: "02", icon: <Zap size={22} strokeWidth={1.5} />,
-      title: "Run the Scheduler",
-      body: "Click Run Optimization. The algorithm sorts all jobs by profit descending, then greedily assigns each to the latest available slot at or before its deadline.",
-      tip: "Runs in O(n log n) time — fast for any realistic input size.",
+      n: "02", icon: <Sliders size={22} strokeWidth={1.5} />,
+      title: "Latest Slot Allocation",
+      body: "Our strategic scheduler targets the latest possible day for each project, keeping early slots free for tight deadlines.",
+      tip: "This greedy approach optimally balances deadlines and client values.",
     },
     {
       n: "03", icon: <BarChart2 size={22} strokeWidth={1.5} />,
-      title: "Read the Timeline",
-      body: "Accepted jobs appear raised above the copper axis — the provably optimal set. Rejected jobs sit flat below — they couldn't fit without displacing a higher-profit job.",
-      tip: "The total ₹ shown is the mathematical maximum achievable.",
+      title: "Review & Sign Schedule",
+      body: "Examine the generated production schedule, inspect the decision log, and print a signed project schedule receipt.",
+      tip: "Print a PDF version of the Weekly Production Schedule for client review.",
     },
   ];
   return (
@@ -781,12 +831,12 @@ function HowItWorks() {
               <Info size={11} style={{ color: "hsl(8 51% 51%)" }} />
               <span className="font-sans text-[11px] font-semibold tracking-[0.14em] uppercase" style={{ color: "hsl(8 44% 44%)" }}>How it works</span>
             </div>
-            <h2 className="font-serif font-bold" style={{ fontSize: "clamp(2rem,4.5vw,3.2rem)", color: "hsl(120 2% 17%)" }}>
-              Three steps to the<br /><em>optimal schedule</em>
+            <h2 className="font-serif font-bold italic leading-[1.02] text-gradient" style={{ fontSize: "clamp(2.5rem,5.5vw,4.2rem)" }}>
+              Three steps to the<br />optimal greedy selection
             </h2>
           </div>
           <p className="font-sans text-sm max-w-xs text-right hidden md:block" style={{ color: "hsl(60 4% 52%)" }}>
-            Greedy guarantees maximum profit when each job occupies exactly one time slot.
+            Compare greedy fractional density cutting with greedy atomic skip-and-continue heuristics.
           </p>
         </Reveal>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 relative">
@@ -822,17 +872,24 @@ function HowItWorks() {
 // ═══════════════════════════════════════════════════════════
 //  ALGORITHM SECTION
 // ═══════════════════════════════════════════════════════════
-function AlgorithmSection() {
-  const pseudoSteps = [
-    { n: 1, code: "Sort jobs by profit (descending)",     comment: "Highest value first"        },
-    { n: 2, code: "Find maxDeadline across all jobs",     comment: "Determines total slots"      },
-    { n: 3, code: "Initialise slots[1..maxDeadline]",     comment: "Empty schedule"              },
-    { n: 4, code: "For each job j (sorted):",             comment: ""                            },
-    { n: 5, code: "  Find latest free slot s ≤ deadline", comment: "Keeps early slots free"      },
-    { n: 6, code: "  If s found → accept, slots[s] = j", comment: "Greedy assignment"           },
-    { n: 7, code: "  Else → reject j",                   comment: "No slot available"           },
-    { n: 8, code: "Return accepted + total profit",       comment: "Optimal solution"            },
+function AlgorithmSection({
+  algorithm, setAlgorithm
+}: {
+  algorithm: "fractional" | "dp";
+  setAlgorithm: (a: "fractional" | "dp") => void;
+}) {
+  const greedySequencingPseudo = [
+    { n: 1, code: "Sort projects by Contract Value desc",            comment: "Prioritise high-paying clients first" },
+    { n: 2, code: "Initialize schedule slots [1..Capacity] as Empty",comment: "Create work week timeline" },
+    { n: 3, code: "For each project in sortedProjects:",              comment: "Process in priority order" },
+    { n: 4, code: "  For slot = min(Capacity, project.deadline) down to 1:", comment: "Latest Slot Strategy search" },
+    { n: 5, code: "    If slot is Empty:",                           comment: "Found an open work slot" },
+    { n: 6, code: "      Schedule project in slot",                  comment: "Allocate task to this day" },
+    { n: 7, code: "      Mark slot as Filled; break",                comment: "Secure contract and stop search" },
+    { n: 8, code: "  If project is not scheduled after search:",     comment: "No slots available before deadline" },
+    { n: 9, code: "    Reject project",                              comment: "Skip project to prevent missing deadlines" },
   ];
+
   return (
     <section id="algorithm" className="py-32 px-8 relative overflow-hidden">
       <div className="absolute right-0 top-0 w-[600px] h-[600px] pointer-events-none"
@@ -845,28 +902,33 @@ function AlgorithmSection() {
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-5"
                 style={{ background: "hsl(8 51% 51%/0.08)", border: "1px solid hsl(8 51% 51%/0.2)" }}>
                 <Clock size={11} style={{ color: "hsl(8 51% 51%)" }} />
-                <span className="font-sans text-[11px] font-semibold tracking-[0.14em] uppercase" style={{ color: "hsl(8 44% 44%)" }}>The Algorithm</span>
+                <span className="font-sans text-[11px] font-semibold tracking-[0.14em] uppercase" style={{ color: "hsl(8 44% 44%)" }}>The Technique</span>
               </div>
-              <h2 className="font-serif font-bold mb-6" style={{ fontSize: "clamp(2rem,4vw,3rem)", color: "hsl(120 2% 17%)" }}>
-                Why Greedy<br /><em>is optimal here</em>
+              <h2 className="font-serif font-bold italic leading-[1.02] text-gradient mb-6" style={{ fontSize: "clamp(2.5rem,5.5vw,4.2rem)" }}>
+                The Technique: Greedy by Profit<br />with Latest Slot Allocation
               </h2>
-              <p className="font-sans text-sm leading-loose mb-6" style={{ color: "hsl(60 4% 46%)" }}>
-                The greedy rule — always pick the highest-profit remaining job and assign it to the
-                <strong style={{ color: "hsl(8 51% 48%)" }}> latest available slot</strong> — is provably correct.
-                Delaying assignments keeps early slots free for tight-deadline jobs.
-              </p>
-              <p className="font-sans text-sm leading-loose mb-8" style={{ color: "hsl(60 4% 46%)" }}>
-                Any schedule that differs from the greedy result has equal or lower profit — we always
-                process jobs in decreasing profit order, so no swap can improve the total.
-              </p>
+              
+              <div className="space-y-4">
+                <p className="font-sans text-sm leading-loose" style={{ color: "hsl(60 4% 46%)" }}>
+                  To achieve the maximum possible revenue, the system executes two distinct greedy steps:
+                </p>
+                <ol className="list-decimal pl-5 space-y-3 font-sans text-sm leading-relaxed" style={{ color: "hsl(60 4% 46%)" }}>
+                  <li>
+                    <strong style={{ color: "hsl(8 51% 48%)" }}>Greedy Selection:</strong> All incoming projects are sorted by Contract Value. We prioritize the highest-paying clients first.
+                  </li>
+                  <li>
+                    <strong style={{ color: "hsl(8 51% 48%)" }}>Latest Slot Strategy:</strong> Each selected project is greedily scheduled into the latest possible open slot on or before its deadline. This keeps early slots open for urgent, tight-deadline tasks that may appear later in the queue.
+                  </li>
+                </ol>
+              </div>
             </Reveal>
-            <Reveal delay={0.1}>
+            <Reveal delay={0.1} className="mt-8">
               <div className="grid grid-cols-2 gap-4">
                 {[
                   { label: "Time Complexity",  val: "O(n log n)", accent: false },
                   { label: "Space Complexity", val: "O(n)",       accent: false },
-                  { label: "Optimal?",         val: "Yes",        accent: true  },
-                  { label: "Works for",        val: "Unit jobs",  accent: false },
+                  { label: "Guarantees Optimal?", val: "Yes",     accent: true  },
+                  { label: "Allocation Rule",  val: "Latest Slot", accent: false },
                 ].map(s => (
                   <TiltCard key={s.label} className="ceramic rounded-sm p-5">
                     <p className="font-sans text-[10px] font-semibold tracking-widest uppercase mb-1.5"
@@ -879,7 +941,6 @@ function AlgorithmSection() {
             </Reveal>
           </div>
 
-          {/* Pseudo-code terminal */}
           <Reveal delay={0.15}>
             <div className="rounded-sm overflow-hidden"
               style={{ background: "hsl(120 2% 15%)", border: "1px solid hsl(120 2% 22%)", boxShadow: "0 20px 50px hsl(120 2% 10%/0.3)" }}>
@@ -888,10 +949,12 @@ function AlgorithmSection() {
                 {["hsl(0 70% 60%)", "hsl(40 80% 60%)", "hsl(120 50% 55%)"].map((c, i) => (
                   <div key={i} className="w-3 h-3 rounded-full" style={{ background: c }} />
                 ))}
-                <span className="ml-3 font-sans text-xs" style={{ color: "hsl(60 4% 45%)" }}>greedy-scheduler.ts</span>
+                <span className="ml-3 font-sans text-xs" style={{ color: "hsl(60 4% 45%)" }}>
+                  greedy-latest-slot-scheduler.ts
+                </span>
               </div>
               <div className="p-6 space-y-1.5">
-                {pseudoSteps.map((s, i) => (
+                {greedySequencingPseudo.map((s, i) => (
                   <motion.div key={s.n}
                     initial={{ opacity: 0, x: -10 }}
                     whileInView={{ opacity: 1, x: 0 }}
@@ -926,20 +989,33 @@ function AlgorithmSection() {
 // ═══════════════════════════════════════════════════════════
 //  OPTIMIZER APP
 // ═══════════════════════════════════════════════════════════
-function OptimizerApp() {
+function OptimizerApp({
+  algorithm, setAlgorithm, token,
+}: {
+  algorithm: "fractional" | "dp";
+  setAlgorithm: (a: "fractional" | "dp") => void;
+  token: string;
+}) {
   const burst = useContext(SparkCtx);
 
-  const [jobs,     setJobs    ] = useState<Job[]>([]);
-  const [state,    setState   ] = useState<"idle"|"running"|"done">("idle");
-  const [result,   setResult  ] = useState<Result|null>(null);
-  const [toasts,   setToasts  ] = useState<Toast[]>([]);
+  const [items,      setItems     ] = useState<Item[]>([]);
+  const [capacity,   setCapacity  ] = useState<number>(10);
+  const [state,      setState     ] = useState<"idle"|"running"|"done">("idle");
+  const [result,     setResult    ] = useState<KnapsackResult|null>(null);
+  const [toasts,     setToasts    ] = useState<Toast[]>([]);
   const [shimmerIds, setShimmerIds] = useState<Set<string>>(new Set());
-  const [jobName,  setJobName ] = useState("");
-  const [deadline, setDeadline] = useState("");
-  const [profit,   setProfit  ] = useState("");
+  const [committing, setCommitting] = useState(false);
+  
+  const [itemName,   setItemName  ] = useState("");
+  const [itemWeight, setItemWeight] = useState("");
+  const [itemValue,  setItemValue ] = useState("");
 
-  const addJobBtnRef = useRef<HTMLDivElement>(null);
-  const runBtnRef    = useRef<HTMLDivElement>(null);
+  const [hoveredStepId, setHoveredStepId] = useState<string | null>(null);
+  const [showReceipt,    setShowReceipt   ] = useState(false);
+  const [showHistory,    setShowHistory   ] = useState(false);
+
+  const addItemBtnRef = useRef<HTMLDivElement>(null);
+  const runBtnRef     = useRef<HTMLDivElement>(null);
 
   const toast = useCallback((title: string, sub?: string) => {
     const id = uid();
@@ -947,46 +1023,118 @@ function OptimizerApp() {
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3600);
   }, []);
 
-  const addJob = (e: FormEvent) => {
+  // ── Load projects from API on mount ──────────────────────
+  useEffect(() => {
+    if (!token) return;
+    projectsApi.list(token)
+      .then(({ projects }) => {
+        setItems(projects.map(p => ({
+          id: String(p.id),
+          name: p.name,
+          weight: p.weight,
+          value: p.value,
+        })));
+      })
+      .catch(err => {
+        console.error("Failed to load projects:", err.message);
+        toast("Could not load projects", "Check your connection and refresh.");
+      });
+  }, [token]);
+
+  // ── Add project → POST /api/projects ────────────────────
+  const addItem = async (e: FormEvent) => {
     e.preventDefault();
-    if (!jobName.trim() || !deadline || !profit) return;
-    const d = parseInt(deadline), p = parseInt(profit);
-    if (isNaN(d) || isNaN(p) || d < 1 || d > 10 || p < 0) return;
-    const job: Job = { id: uid(), name: jobName.trim(), deadline: d, profit: p };
-    setJobs(prev => [...prev, job]);
-    setState("idle"); setResult(null);
-    setJobName(""); setDeadline(""); setProfit("");
-    toast("Job added", job.name);
-    // burst sparks from button
-    if (addJobBtnRef.current) {
-      const r = addJobBtnRef.current.getBoundingClientRect();
-      burst(r.left + r.width / 2, r.top + r.height / 2, 12);
+    if (!itemName.trim() || !itemWeight || !itemValue) return;
+    const w = parseInt(itemWeight), v = parseInt(itemValue);
+    if (isNaN(w) || isNaN(v) || w < 1 || w > capacity || v < 0) {
+      toast("Invalid bounds", `Deadline must be between Day 1 and Day ${capacity}. Contract Value must be positive.`);
+      return;
+    }
+    try {
+      const { project } = await projectsApi.add(token, { name: itemName.trim(), weight: w, value: v });
+      const newItem: Item = { id: String(project.id), name: project.name, weight: project.weight, value: project.value };
+      setItems(prev => [...prev, newItem]);
+      setState("idle"); setResult(null);
+      setItemName(""); setItemWeight(""); setItemValue("");
+      toast("Project added", `${project.name} (Deadline: Day ${w}, Value: ₹${v.toLocaleString("en-IN")})`);
+      if (addItemBtnRef.current) {
+        const r = addItemBtnRef.current.getBoundingClientRect();
+        burst(r.left + r.width / 2, r.top + r.height / 2, 12);
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to add project.";
+      toast("Error", msg);
     }
   };
 
-  const deleteJob = (id: string) => { setJobs(p => p.filter(j => j.id !== id)); setState("idle"); setResult(null); };
-
-  const loadSample = () => {
-    setJobs(SAMPLE.map(j => ({ ...j, id: uid() })));
-    setState("idle"); setResult(null);
-    toast("Sample data loaded", "8 architecture projects");
+  // ── Delete project → DELETE /api/projects/:id ───────────
+  const deleteItem = async (id: string) => {
+    try {
+      await projectsApi.remove(token, id);
+      setItems(p => p.filter(item => item.id !== id));
+      setState("idle");
+      setResult(null);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to delete project.";
+      toast("Error", msg);
+    }
   };
 
-  const optimize = (e: React.MouseEvent) => {
-    if (!jobs.length) return;
+
+  const handleCapacityChange = (newCap: number) => {
+    setCapacity(newCap);
+    setState("idle");
+    setResult(null);
+  };
+
+  // ── Run optimization → POST /api/schedule/optimize ──────
+  const optimize = async (e: React.MouseEvent) => {
+    if (!items.length) return;
     setState("running");
     burst(e.clientX, e.clientY, 18);
-    setTimeout(() => {
-      const res = runGreedy(jobs);
-      setResult(res); setState("done");
-      toast("Optimization complete", `${fmt(res.totalProfit)} total profit`);
-      // shimmer sweep on accepted cards after short delay
+    try {
+      const res = await scheduleApi.optimize(token, { capacity });
+      // Map API response to local KnapsackResult shape
+      const mapped: KnapsackResult = {
+        accepted: res.accepted.map((a: any) => ({ ...a, id: String(a.id ?? a.id) })),
+        rejected: res.rejected.map((r: any) => ({ ...r, id: String(r.id ?? r.id) })),
+        totalValue: res.totalValue,
+        totalWeight: res.totalWeight,
+        decisionLog: res.decisionLog,
+      };
+      setResult(mapped); setState("done");
+      toast("Optimization complete", `${fmt(res.totalValue)} total value · ${res.rejected.length} waitlisted`);
       setTimeout(() => {
-        const ids = new Set(res.accepted.map(j => j.id));
+        const ids = new Set(mapped.accepted.map(item => item.id));
         setShimmerIds(ids);
         setTimeout(() => setShimmerIds(new Set()), 1200);
       }, 400);
-    }, 950);
+    } catch (err) {
+      setState("idle");
+      const msg = err instanceof ApiError ? err.message : "Optimization failed. Please try again.";
+      toast("Error", msg);
+    }
+  };
+
+  // ── Commit to history → POST /api/schedule/commit ───────
+  const commitSchedule = async () => {
+    if (!result) return;
+    setCommitting(true);
+    try {
+      const res = await scheduleApi.commit(token, {
+        capacity,
+        totalValue: result.totalValue,
+        totalWeight: result.totalWeight,
+        accepted: result.accepted,
+        rejected: result.rejected,
+      });
+      toast("Schedule committed", `History record #${res.historyId} saved.`);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Commit failed. Please try again.";
+      toast("Error", msg);
+    } finally {
+      setCommitting(false);
+    }
   };
 
   return (
@@ -1000,11 +1148,13 @@ function OptimizerApp() {
             <Trophy size={11} style={{ color: "hsl(8 51% 51%)" }} />
             <span className="font-sans text-[11px] font-semibold tracking-[0.14em] uppercase" style={{ color: "hsl(8 44% 44%)" }}>Live Optimizer</span>
           </div>
-          <h2 className="font-serif font-bold mb-4" style={{ fontSize: "clamp(2rem,4.5vw,3.2rem)", color: "hsl(120 2% 17%)" }}>
-            Build your schedule
-          </h2>
+          <div className="mb-4">
+            <h2 className="font-serif font-bold italic leading-[1.02] text-gradient" style={{ fontSize: "clamp(2.5rem,5.5vw,4.2rem)" }}>
+              Job Scheduling Optimization.
+            </h2>
+          </div>
           <p className="font-sans text-sm max-w-sm mx-auto" style={{ color: "hsl(60 4% 52%)" }}>
-            Add jobs, hit Run, and see the maximum-profit schedule instantly.
+            Add creative projects, set deadlines, and run greedy scheduling to optimize your weekly production.
           </p>
         </Reveal>
 
@@ -1013,7 +1163,7 @@ function OptimizerApp() {
             style={{ boxShadow: "0 8px 28px hsl(35 22% 58%/.14), 0 24px 56px hsl(35 20% 58%/.08)", border: "1px solid hsl(38 22% 86%)" }}>
 
             {/* ── Left terracotta pane ── */}
-            <div className="w-full md:w-[32%] flex flex-col relative"
+            <div className="w-full md:w-[32%] flex flex-col relative overflow-hidden"
               style={{ background: "linear-gradient(165deg,hsl(14 38% 56%) 0%,hsl(10 44% 48%) 60%,hsl(8 50% 43%) 100%)", boxShadow: "4px 0 28px hsl(8 51% 28%/.16)" }}>
               <div className="absolute inset-0 pointer-events-none"
                 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0.25'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.065'/%3E%3C/svg%3E")`, backgroundSize: "200px 200px", mixBlendMode: "overlay" as React.CSSProperties["mixBlendMode"] }} />
@@ -1021,25 +1171,46 @@ function OptimizerApp() {
                 style={{ background: "linear-gradient(90deg,transparent,hsl(14 60% 72%/0.5),transparent)" }} />
 
               <div className="p-8 flex-shrink-0 relative z-10">
-                <div className="mb-8">
+                <div className="mb-6">
                   <div className="flex items-center gap-2 mb-2">
                     <Layers size={14} style={{ color: "hsl(14 55% 82%)" }} strokeWidth={1.5} />
-                    <span className="font-sans text-[10px] font-semibold tracking-[0.2em] uppercase" style={{ color: "hsl(14 40% 78%)" }}>Input</span>
+                    <span className="font-sans text-[10px] font-semibold tracking-[0.2em] uppercase" style={{ color: "hsl(14 40% 78%)" }}>Input Settings</span>
                   </div>
                   <h3 className="font-serif text-3xl font-bold leading-none" style={{ color: "hsl(30 40% 97%)", textShadow: "0 2px 8px hsl(8 51% 25%/.3)" }}>
-                    Add a Job
+                    Project Queuing
                   </h3>
                 </div>
 
-                <form onSubmit={addJob} className="space-y-4">
-                  <DebossedInput label="Job Name"  type="text"   placeholder="e.g. Grand Library" value={jobName}  onChange={setJobName}  tabIndex={1} />
-                  <div className="grid grid-cols-2 gap-3">
-                    <DebossedInput label="Deadline" type="number" placeholder="1–10"               value={deadline} onChange={setDeadline} tabIndex={2} min="1" max="10" />
-                    <DebossedInput label="Profit (₹)" type="number" placeholder="0"               value={profit}   onChange={setProfit}   tabIndex={3} min="0" />
+                {/* Capacity Slider */}
+                <div className="mb-6 flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2 text-[10px] font-sans font-semibold tracking-[0.18em] uppercase" style={{ color: "hsl(14 40% 78%)" }}>
+                    <span className="whitespace-nowrap">Work Week Capacity</span>
+                    <span className="text-sm font-bold text-white font-serif flex-shrink-0">{capacity} Days</span>
                   </div>
-                  <div ref={addJobBtnRef}>
+                  <input
+                    type="range"
+                    min="5"
+                    max="10"
+                    value={capacity}
+                    onChange={e => handleCapacityChange(parseInt(e.target.value))}
+                    className="w-full h-1.5 rounded-lg appearance-none cursor-pointer bg-amber-100/30 accent-[hsl(30,40%,97%)]"
+                    style={{ outline: "none" }}
+                  />
+                  <div className="flex justify-between text-[9px] font-sans text-amber-200/60 uppercase">
+                    <span>5 Days</span>
+                    <span>10 Days</span>
+                  </div>
+                </div>
+
+                <form onSubmit={addItem} className="space-y-4">
+                  <DebossedInput label="Client Project (e.g., Logo Design, Video Edit)" type="text" placeholder="e.g. Logo Design" value={itemName} onChange={setItemName} tabIndex={1} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <DebossedInput label={`Delivery Deadline (Day 1 to 10)`} type="number" placeholder="Day 1-10" value={itemWeight} onChange={setItemWeight} tabIndex={2} min="1" max={String(capacity)} />
+                    <DebossedInput label="Contract Value (₹)" type="number" placeholder="₹ Value" value={itemValue} onChange={setItemValue} tabIndex={3} min="1" />
+                  </div>
+                  <div ref={addItemBtnRef}>
                     <MagneticButton type="submit" tabIndex={4}
-                      data-testid="button-add-job"
+                      data-testid="button-add-item"
                       className="w-full py-4 mt-1 font-serif text-base font-semibold tracking-wide rounded-sm"
                       style={{
                         background: "linear-gradient(180deg,hsl(30 40% 97%) 0%,hsl(30 25% 93%) 100%)",
@@ -1047,37 +1218,37 @@ function OptimizerApp() {
                         boxShadow: "0 3px 8px hsl(8 51% 22%/.35),0 6px 16px hsl(8 51% 22%/.2),0 1px 0 hsl(0 0%100%/.9) inset,0 -2px 0 hsl(8 40% 38%/.28) inset",
                         letterSpacing: "0.04em",
                       }}>
-                      Add Job
+                      Add Project
                     </MagneticButton>
                   </div>
                 </form>
               </div>
 
-              {/* Job list */}
-              <div className="flex-1 overflow-y-auto px-8 pb-8 space-y-2 relative z-10">
-                {jobs.length > 0 && (
+              {/* Item List */}
+              <div className="flex-1 overflow-y-auto px-8 pb-8 space-y-2 relative z-10 max-h-[300px]">
+                {items.length > 0 && (
                   <p className="text-[10px] font-sans font-semibold tracking-[0.15em] uppercase mb-3"
                     style={{ color: "hsl(14 40% 76%)" }}>
-                    {jobs.length} job{jobs.length !== 1 ? "s" : ""} queued
+                    {items.length} project{items.length !== 1 ? "s" : ""} queued
                   </p>
                 )}
                 <AnimatePresence>
-                  {jobs.map(job => (
-                    <motion.div key={job.id}
+                  {items.map(item => (
+                    <motion.div key={item.id}
                       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.14 } }}
                       className="flex items-center justify-between px-3 py-2.5 rounded-sm"
                       style={{ background: "hsl(14 35% 52%/.32)", boxShadow: "inset 0 1px 0 hsl(14 55% 70%/.2),inset 0 -1px 0 hsl(8 45% 28%/.18)" }}
-                      data-testid={`card-job-${job.id}`}>
+                      data-testid={`card-item-${item.id}`}>
                       <div className="flex flex-col min-w-0 mr-2">
-                        <span className="font-serif font-semibold text-sm truncate" style={{ color: "hsl(30 35% 96%)" }}>{job.name}</span>
+                        <span className="font-serif font-semibold text-sm truncate" style={{ color: "hsl(30 35% 96%)" }}>{item.name}</span>
                         <div className="flex gap-3 text-[11px] font-sans mt-0.5" style={{ color: "hsl(14 35% 80%)" }}>
-                          <span>DL {job.deadline}</span>
-                          <span>{fmt(job.profit)}</span>
+                          <span>Deadline: Day {item.weight}</span>
+                          <span>{fmt(item.value)}</span>
                         </div>
                       </div>
-                      <button onClick={() => deleteJob(job.id)} className="flex-shrink-0 p-1 hover:opacity-60 transition-opacity"
-                        style={{ color: "hsl(14 40% 82%)" }} data-testid={`button-delete-${job.id}`}>
+                      <button onClick={() => deleteItem(item.id)} className="flex-shrink-0 p-1 hover:opacity-60 transition-opacity"
+                        style={{ color: "hsl(14 40% 82%)" }} data-testid={`button-delete-${item.id}`}>
                         <X size={14} />
                       </button>
                     </motion.div>
@@ -1088,13 +1259,14 @@ function OptimizerApp() {
 
             {/* ── Right glass pane ── */}
             <div className="w-full md:w-[68%] flex flex-col glass">
-              {/* Action bar */}
-              <div className="flex items-center flex-wrap gap-3 px-8 py-5 flex-shrink-0"
+              
+              {/* Action Bar */}
+              <div className="flex items-center flex-wrap gap-4 px-8 py-5 flex-shrink-0"
                 style={{ borderBottom: "1px solid hsl(38 22% 88%/.8)" }}>
                 <div ref={runBtnRef}>
                   <MagneticButton
                     onClick={optimize}
-                    disabled={!jobs.length || state === "running"}
+                    disabled={!items.length || state === "running"}
                     data-testid="button-run-optimization"
                     className="flex items-center gap-2.5 px-6 py-3 rounded-sm font-serif font-semibold text-sm disabled:opacity-35 disabled:cursor-not-allowed"
                     style={{
@@ -1102,30 +1274,52 @@ function OptimizerApp() {
                       color: "hsl(30 40% 97%)",
                       boxShadow: "0 2px 6px hsl(8 51% 22%/.32),0 5px 14px hsl(8 51% 22%/.16),0 1px 0 hsl(14 60% 68%/.4) inset,0 -2px 0 hsl(8 50% 28%/.3) inset",
                     }}>
-                    <Play size={13} fill="currentColor" />Run Optimization
+                    <Play size={13} fill="currentColor" /> Run Optimization
                   </MagneticButton>
                 </div>
 
-                <MagneticButton onClick={loadSample} data-testid="button-load-sample"
-                  className="px-5 py-3 font-sans text-sm font-medium rounded-sm hover:bg-white/60 transition-all"
-                  style={{ color: "hsl(60 4% 53%)", border: "1px solid hsl(38 22% 84%)" }}>
-                  Load Sample Data
-                </MagneticButton>
+                <div className="px-3 py-2 rounded-sm font-sans font-semibold text-xs border border-neutral-300/40 bg-white/80 text-neutral-700 shadow-sm ml-auto select-none">
+                  Latest Slot Strategy Active
+                </div>
 
                 {state === "done" && (
-                  <button onClick={() => { setState("idle"); setResult(null); }}
-                    className="ml-auto px-4 py-2 font-sans text-xs font-medium rounded-sm hover:bg-white/50 transition-all"
-                    style={{ color: "hsl(60 4% 60%)", border: "1px solid hsl(38 20% 88%)" }}>
-                    Reset
-                  </button>
+                  <>
+                    <MagneticButton
+                      onClick={commitSchedule}
+                      disabled={committing}
+                      data-testid="button-commit-schedule"
+                      className="flex items-center gap-1.5 px-4 py-2 font-sans text-xs font-medium rounded-sm transition-all disabled:opacity-40"
+                      style={{
+                        color: "hsl(8 51% 47%)",
+                        border: "1px solid hsl(8 51% 51% / 0.35)",
+                        background: "hsl(8 51% 51% / 0.06)",
+                      }}>
+                      <Save size={12} />
+                      {committing ? "Saving..." : "Commit to History"}
+                    </MagneticButton>
+                    <button onClick={() => { setState("idle"); setResult(null); }}
+                      className="px-4 py-2 font-sans text-xs font-medium rounded-sm hover:bg-white/50 transition-all"
+                      style={{ color: "hsl(60 4% 60%)", border: "1px solid hsl(38 20% 88%)" }}>
+                      Reset
+                    </button>
+                  </>
                 )}
+                
+                <MagneticButton
+                  onClick={() => setShowHistory(true)}
+                  data-testid="button-view-history"
+                  className="px-4 py-2 font-sans text-xs font-medium rounded-sm transition-all border border-neutral-300 hover:bg-neutral-100"
+                  style={{ color: "hsl(60 4% 40%)" }}
+                >
+                  View History
+                </MagneticButton>
               </div>
 
-              {/* Content */}
+              {/* Main Content Pane */}
               <div className="flex-1 px-8 py-8 overflow-y-auto min-h-[440px] relative">
-
-                {/* Empty */}
-                {!jobs.length && (
+                
+                {/* Empty State */}
+                {!items.length && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
                     <motion.div
                       animate={{ y: [0, -8, 0] }}
@@ -1134,23 +1328,23 @@ function OptimizerApp() {
                       style={{ background: "hsl(40 16% 92%)", boxShadow: "inset 0 2px 6px hsl(35 22% 60%/.14),inset 0 -1px 0 hsl(0 0% 100%/.8)" }}>
                       <BarChart2 size={26} strokeWidth={1.2} style={{ color: "hsl(60 4% 64%)" }} />
                     </motion.div>
-                    <p className="font-serif text-xl" style={{ color: "hsl(120 2% 17%/.3)" }}>Add jobs to begin</p>
-                    <p className="font-sans text-xs" style={{ color: "hsl(60 4% 58%/.65)" }}>or click Load Sample Data for a quick demo</p>
+                    <p className="font-serif text-xl" style={{ color: "hsl(120 2% 17%/.3)" }}>Add items to begin</p>
+                    <p className="font-sans text-xs" style={{ color: "hsl(60 4% 58%/.65)" }}>or click Load Sample Relics for a demonstration</p>
                   </div>
                 )}
 
-                {/* Idle grid */}
-                {!!jobs.length && state === "idle" && (
+                {/* Idle Grid (Preview of all items in tray) */}
+                {!!items.length && state === "idle" && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                     <AnimatePresence>
-                      {jobs.map(job => (
-                        <motion.div key={job.id}
+                      {items.map(item => (
+                        <motion.div key={item.id}
                           initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                          className="ceramic rounded-sm p-5" data-testid={`card-preview-${job.id}`}>
-                          <h3 className="font-serif text-base font-semibold mb-3" style={{ color: "hsl(120 2% 17%)" }}>{job.name}</h3>
+                          className="ceramic rounded-sm p-5" data-testid={`card-preview-${item.id}`}>
+                          <h3 className="font-serif text-base font-semibold mb-3 text-neutral-800">{item.name}</h3>
                           <div className="flex justify-between items-center font-sans text-xs">
-                            <span style={{ color: "hsl(60 4% 54%)" }}>Deadline <strong style={{ color: "hsl(120 2% 22%)" }}>{job.deadline}</strong></span>
-                            <span className="font-bold text-sm" style={{ color: "hsl(8 51% 50%)" }}>{fmt(job.profit)}</span>
+                            <span className="text-neutral-500">Deadline: <strong className="text-neutral-700">Day {item.weight}</strong></span>
+                            <span className="font-bold text-sm" style={{ color: "hsl(8 51% 50%)" }}>{fmt(item.value)}</span>
                           </div>
                         </motion.div>
                       ))}
@@ -1158,11 +1352,11 @@ function OptimizerApp() {
                   </div>
                 )}
 
-                {/* Skeleton */}
+                {/* Skeleton Loader during Run */}
                 {state === "running" && (
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {[...Array(Math.min(jobs.length, 6))].map((_, i) => (
+                      {[...Array(Math.min(items.length, 6))].map((_, i) => (
                         <motion.div key={i}
                           animate={{ opacity: [0.3, 0.65, 0.3] }}
                           transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut", delay: i * 0.11 }}
@@ -1179,132 +1373,493 @@ function OptimizerApp() {
                     <div className="flex items-center gap-2.5 mt-2">
                       <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 1, ease: "easeInOut" }}
                         className="w-1.5 h-1.5 rounded-full" style={{ background: "hsl(8 51% 51%)" }} />
-                      <span className="font-sans text-xs" style={{ color: "hsl(60 4% 56%)" }}>Computing optimal schedule…</span>
+                      <span className="font-sans text-xs" style={{ color: "hsl(60 4% 56%)" }}>
+                        Sorting items by value density and selecting greedily...
+                      </span>
                     </div>
                   </div>
                 )}
 
-                {/* Results */}
+                {/* Results Screen */}
                 {state === "done" && result && (
                   <div className="flex flex-col gap-8">
-
-                    {/* Stats */}
+                    
+                    {/* Metrics Dashboard */}
                     <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
                       className="grid grid-cols-3 gap-3">
                       {[
-                        { label: "Total Profit",  value: fmt(result.totalProfit),                      accent: true  },
-                        { label: "Jobs Accepted", value: `${result.accepted.length} / ${jobs.length}`, accent: false },
-                        { label: "Jobs Rejected", value: String(result.rejected.length),               accent: false },
-                      ].map(s => (
+                        { label: "Total Optimized Revenue", value: fmt(result.totalValue), accent: true },
+                        { label: "Allocated Projects", value: `${result.totalWeight} / ${capacity} Days`, accent: false },
+                        { label: "Schedule Density", value: `${((result.totalWeight / capacity) * 100).toFixed(0)}%`, accent: false },
+                      ].map((s, idx) => (
                         <TiltCard key={s.label} className="ceramic rounded-sm p-4">
                           <p className="font-sans text-[10px] font-semibold tracking-[0.14em] uppercase mb-1.5" style={{ color: "hsl(60 4% 58%)" }}>{s.label}</p>
                           <p className="font-serif text-xl font-bold" style={{ color: s.accent ? "hsl(8 51% 47%)" : "hsl(120 2% 17%)" }}>{s.value}</p>
+                          {idx === 2 && (
+                            <div className="w-full bg-neutral-200 h-1.5 rounded-full overflow-hidden mt-2">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(result.totalWeight / capacity) * 100}%` }}
+                                transition={{ duration: 1, ease: "easeOut" }}
+                                className="h-full"
+                                style={{ background: "linear-gradient(90deg,hsl(14 42% 56%),hsl(8 52% 44%))" }}
+                              />
+                            </div>
+                          )}
                         </TiltCard>
                       ))}
                     </motion.div>
 
-                    {/* Accepted */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-4">
-                        <motion.div className="w-2 h-2 rounded-full"
-                          style={{ background: "hsl(8 51% 51%)" }}
-                          animate={{ scale: [1, 1.4, 1], opacity: [1, 0.7, 1] }}
-                          transition={{ repeat: Infinity, duration: 2 }} />
-                        <span className="font-sans text-[11px] font-semibold tracking-[0.18em] uppercase" style={{ color: "hsl(8 40% 55%)" }}>
-                          Accepted — {result.accepted.length} job{result.accepted.length !== 1 ? "s" : ""}
-                        </span>
-                      </div>
+                    {/* Timeline and Tray Visualizer Container */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                      
+                      {/* ══ Left: Schedule Timeline ══ */}
+                      <div className="lg:col-span-7 flex flex-col items-center">
 
-                      <div className="flex flex-wrap gap-3 pb-8">
-                        {result.accepted.map((job, i) => (
-                          <motion.div key={job.id}
-                            initial={{ y: -22, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ delay: i * 0.07, type: "spring", stiffness: 280, damping: 22 }}
-                            className={`rounded-sm overflow-hidden min-w-[148px] relative ${shimmerIds.has(job.id) ? "shimmer-sweep" : ""}`}
-                            style={{
-                              background: "linear-gradient(165deg,hsl(30 28% 99%) 0%,hsl(30 22% 96%) 100%)",
-                              border: "1px solid hsl(38 22% 87%)",
-                              boxShadow: "0 4px 8px hsl(35 25% 58%/.22),0 10px 24px hsl(35 22% 55%/.14),0 20px 38px hsl(35 20% 55%/.07),0 1px 0 hsl(0 0% 100%/.95) inset",
-                            }}
-                            data-testid={`card-accepted-${job.id}`}>
-                            <div className="absolute left-0 top-0 bottom-0 w-[3px]"
-                              style={{ background: "linear-gradient(180deg,hsl(10 50% 56%),hsl(8 52% 44%))" }} />
-                            <div className="absolute top-0 left-[3px] right-0 h-[1px]" style={{ background: "hsl(38 30% 82%)" }} />
-                            <div className="p-4 pl-5">
-                              <h4 className="font-serif font-bold text-sm leading-tight mb-2.5" style={{ color: "hsl(120 2% 17%)" }}>{job.name}</h4>
-                              <div className="flex items-center justify-between font-sans text-xs">
-                                <span className="px-1.5 py-0.5 rounded-sm font-medium"
-                                  style={{ background: "hsl(38 16% 92%)", color: "hsl(60 4% 48%)", border: "1px solid hsl(38 16% 86%)" }}>
-                                  DL {job.deadline}
-                                </span>
-                                <span className="font-bold text-sm" style={{ color: "hsl(8 51% 49%)" }}>{fmt(job.profit)}</span>
+                        {/* Header */}
+                        <div className="w-full flex justify-between items-center mb-4 font-sans text-xs font-semibold" style={{ color: "hsl(60 4% 40%)" }}>
+                          <span>Weekly Production Calendar</span>
+                          <span>Work Week: {capacity} Days</span>
+                        </div>
+
+                        <div className="relative" style={{ width: 368, height: 360 }}>
+
+                          {/* ── Left: Day labels ── */}
+                          {Array.from({ length: capacity }).map((_, i) => {
+                            const day = i + 1;
+                            return (
+                              <div key={day}
+                                className="absolute flex items-center justify-end pointer-events-none select-none font-sans text-[10px] font-semibold"
+                                style={{
+                                  top: `${((day - 0.5) / capacity) * 100}%`,
+                                  left: 0,
+                                  width: 38,
+                                  transform: "translateY(-50%)",
+                                  color: "hsl(60 4% 42%)"
+                                }}>
+                                Day {day}
                               </div>
+                            );
+                          })}
+
+                          {/* ── Right: Project values or Open indicators ── */}
+                          {Array.from({ length: capacity }).map((_, i) => {
+                            const day = i + 1;
+                            const item = result.accepted.find((acc: any) => acc.scheduledDay === day);
+                            return (
+                              <div key={day}
+                                className="absolute flex items-center pointer-events-none select-none font-sans text-[10px] font-semibold"
+                                style={{
+                                  top: `${((day - 0.5) / capacity) * 100}%`,
+                                  left: 46 + 260 + 8,
+                                  width: 54,
+                                  transform: "translateY(-50%)",
+                                  color: item ? "hsl(8 51% 50%)" : "hsl(60 4% 60%)"
+                                }}>
+                                {item ? `₹${item.value / 1000}k` : "Open"}
+                              </div>
+                            );
+                          })}
+
+                          {/* ── Horizontal dashed division lines between slots ── */}
+                          {Array.from({ length: capacity + 1 }).map((_, i) => {
+                            const pct = (i / capacity) * 100;
+                            return (
+                              <div key={i}
+                                className="absolute pointer-events-none"
+                                style={{
+                                  top: `${pct}%`,
+                                  left: 46,
+                                  width: 260,
+                                  height: 1,
+                                  background: i === 0 || i === capacity
+                                    ? "transparent"
+                                    : "hsl(38 22% 72% / 0.4)",
+                                  borderTop: i === 0 || i === capacity ? "none" : "1px dashed hsl(38 22% 72% / 0.4)",
+                                  zIndex: 1,
+                                }}
+                              />
+                            );
+                          })}
+
+                          {/* ── Visual Timeline slots container ── */}
+                          <div
+                            className="absolute overflow-hidden"
+                            style={{
+                              top: 0,
+                              left: 46,
+                              width: 260,
+                              height: 360,
+                              borderLeft: "4px solid hsl(38 20% 58%)",
+                              borderRight: "4px solid hsl(38 20% 58%)",
+                              borderBottom: "4px solid hsl(38 20% 58%)",
+                              borderTop: "4px solid hsl(38 20% 58%)",
+                              borderRadius: "12px",
+                              background: "hsl(38 14% 97%)",
+                              boxShadow: "inset 0 6px 20px hsl(35 18% 60%/0.08)",
+                              display: "flex",
+                              flexDirection: "column",
+                            }}
+                          >
+                            <AnimatePresence>
+                              {Array.from({ length: capacity }).map((_, i) => {
+                                const day = i + 1;
+                                const item = result.accepted.find((acc: any) => acc.scheduledDay === day);
+                                const pctHeight = 100 / capacity;
+                                
+                                if (item) {
+                                  const isHighlighted = hoveredStepId === item.id;
+                                  const lightness1 = Math.max(34, 56 - i * 3);
+                                  const lightness2 = Math.max(24, 43 - i * 3);
+                                  return (
+                                    <motion.div
+                                      key={item.id}
+                                      initial={{ scaleY: 0, opacity: 0 }}
+                                      animate={{ scaleY: 1, opacity: 1 }}
+                                      exit={{ scaleY: 0, opacity: 0 }}
+                                      style={{
+                                        height: `${pctHeight}%`,
+                                        minHeight: 0,
+                                        flexShrink: 0,
+                                        originY: "top",
+                                        background: isHighlighted
+                                          ? "linear-gradient(180deg, hsl(8 62% 58%) 0%, hsl(8 66% 44%) 100%)"
+                                          : `linear-gradient(180deg, hsl(14 44% ${lightness1}%) 0%, hsl(8 54% ${lightness2}%) 100%)`,
+                                        color: "hsl(30 40% 97%)",
+                                        position: "relative",
+                                        outline: isHighlighted ? "2px solid hsl(8 55% 76%)" : "none",
+                                        outlineOffset: -2,
+                                        zIndex: 2,
+                                      }}
+                                      transition={{ type: "spring", stiffness: 220, damping: 24, delay: i * 0.04 }}
+                                      className={`w-full border-t border-white/20 flex flex-col justify-center items-center overflow-hidden ${shimmerIds.has(item.id) ? "shimmer-sweep" : ""}`}
+                                      data-testid={`card-accepted-${item.id}`}
+                                    >
+                                      <div className="absolute inset-0 pointer-events-none"
+                                        style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 60%)" }} />
+                                      <div className="relative z-10 text-center w-full px-2">
+                                        <p className="font-serif font-bold text-xs leading-tight truncate">
+                                          {item.name}
+                                        </p>
+                                        <p className="font-sans text-[10px] mt-0.5 opacity-80 truncate">
+                                          Value: {fmt(item.value)}
+                                        </p>
+                                      </div>
+                                    </motion.div>
+                                  );
+                                } else {
+                                  return (
+                                    <div
+                                      key={`empty-${day}`}
+                                      style={{
+                                        height: `${pctHeight}%`,
+                                        minHeight: 0,
+                                        flexShrink: 0,
+                                        background: "hsl(38 14% 97%)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                      }}
+                                      className="w-full border-t border-dashed border-neutral-300/60"
+                                    >
+                                      <span className="font-sans text-[9px] uppercase tracking-wider text-neutral-400">
+                                        Open Slot
+                                      </span>
+                                    </div>
+                                  );
+                                }
+                              })}
+                            </AnimatePresence>
+                          </div>
+                        </div>
+
+                        {/* Summary info and Print Schedule CTA */}
+                        <div className="mt-5 w-full flex flex-col gap-4" style={{ maxWidth: 368 }}>
+                          <div className="flex justify-between text-[11px] font-sans px-1" style={{ color: "hsl(60 4% 44%)" }}>
+                            <span>Slots Filled: <strong>{result.totalWeight} / {capacity} Days</strong></span>
+                            <span>Remaining: <strong>{capacity - result.totalWeight} Days</strong></span>
+                          </div>
+                          
+                          <MagneticButton
+                            onClick={() => setShowReceipt(true)}
+                            className="w-full py-3 text-xs font-sans font-semibold tracking-wider uppercase rounded-sm border border-neutral-300 bg-white hover:bg-neutral-50 shadow-sm transition-all"
+                            style={{ color: "hsl(60 4% 36%)" }}
+                          >
+                            Generate Printable Schedule
+                          </MagneticButton>
+                        </div>
+                      </div>
+
+                      {/* Right: Unscheduled Projects Tray (5 cols) */}
+                      <div className="lg:col-span-5">
+                        <div className="flex items-center gap-2 mb-3 px-1">
+                          <div className="w-2.5 h-2.5 rounded-full bg-neutral-400" />
+                          <span className="font-sans text-[11px] font-semibold tracking-[0.18em] uppercase text-neutral-500">
+                            Unscheduled Projects ({result.rejected.length})
+                          </span>
+                        </div>
+                        
+                        <div className="ceramic rounded-sm p-6 min-h-[360px] bg-neutral-50/50 border border-neutral-300/40 shadow-inner flex flex-col gap-3">
+                          <AnimatePresence>
+                            {result.rejected.map((item, i) => {
+                              const isHighlighted = hoveredStepId === item.id;
+                              return (
+                                <motion.div
+                                  key={item.id}
+                                  initial={{ opacity: 0, x: 20 }}
+                                  animate={{ 
+                                    opacity: isHighlighted ? 1.0 : 0.65, 
+                                    x: 0,
+                                    borderColor: isHighlighted ? "hsl(8 51% 51% / 0.6)" : "hsl(38 10% 84%)",
+                                    scale: isHighlighted ? 1.02 : 1.0,
+                                  }}
+                                  exit={{ opacity: 0, x: 20 }}
+                                  transition={{ type: "spring", stiffness: 220, damping: 20, delay: i * 0.05 }}
+                                  className="rounded-sm p-4 bg-neutral-200/50 border shadow-sm flex items-center justify-between text-neutral-600 hover:opacity-100 transition-all duration-200"
+                                  data-testid={`card-rejected-${item.id}`}
+                                >
+                                  <div>
+                                    <h4 className="font-serif font-bold text-sm text-neutral-700">{item.name}</h4>
+                                    <p className="font-sans text-xs text-neutral-500 mt-0.5">
+                                      Deadline: Day {item.weight} | Value: {fmt(item.value)}
+                                    </p>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
+                          </AnimatePresence>
+
+                          {result.rejected.length === 0 && (
+                            <div className="flex-1 flex flex-col justify-center items-center text-center p-8 text-neutral-400/80">
+                              <Check size={28} className="text-emerald-500 mb-2 opacity-70" />
+                              <p className="font-serif italic text-sm">Optimal Allocation</p>
+                              <p className="font-sans text-[10px] mt-1">All contracts scheduled successfully!</p>
                             </div>
-                          </motion.div>
-                        ))}
+                          )}
+                        </div>
                       </div>
 
-                      {/* Copper axis */}
-                      <div className="relative mb-7" style={{ height: 18 }}>
-                        <motion.div className="absolute left-0 right-0"
-                          initial={{ scaleX: 0 }} animate={{ scaleX: 1 }}
-                          transition={{ duration: 0.6, ease: "easeOut" }}
-                          style={{
-                            top: 7, height: 3, borderRadius: 2, transformOrigin: "left",
-                            background: "linear-gradient(90deg,hsl(38 25% 80%) 0%,hsl(38 28% 74%) 50%,hsl(38 25% 82%) 100%)",
-                            boxShadow: "0 1px 0 hsl(0 0% 100%/.6) inset,0 1px 4px hsl(35 22% 55%/.18)",
-                          }} />
-                        {[...Array(9)].map((_, i) => (
-                          <div key={i} className="absolute" style={{
-                            left: `${(i / 8) * 100}%`, top: 2, width: 1.5, height: 14,
-                            background: "hsl(38 22% 72%)", borderRadius: 1, transform: "translateX(-50%)",
-                          }} />
-                        ))}
-                      </div>
-
-                      {/* Rejected */}
-                      {result.rejected.length > 0 && (
-                        <>
-                          <div className="flex items-center gap-2 mb-4">
-                            <div className="w-2 h-2 rounded-full" style={{ background: "hsl(60 4% 66%)" }} />
-                            <span className="font-sans text-[11px] font-semibold tracking-[0.18em] uppercase" style={{ color: "hsl(60 4% 60%)" }}>
-                              Rejected — {result.rejected.length} job{result.rejected.length !== 1 ? "s" : ""}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-3">
-                            {result.rejected.map((job, i) => (
-                              <motion.div key={job.id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 0.5, y: 0 }}
-                                transition={{ delay: result.accepted.length * 0.07 + i * 0.06, type: "spring" }}
-                                className="rounded-sm min-w-[148px] p-4"
-                                style={{ background: "hsl(40 10% 90%)", border: "1px solid hsl(38 10% 84%)" }}
-                                data-testid={`card-rejected-${job.id}`}>
-                                <h4 className="font-serif font-semibold text-sm leading-tight mb-2" style={{ color: "hsl(60 4% 42%)" }}>{job.name}</h4>
-                                <div className="flex items-center justify-between font-sans text-xs">
-                                  <span style={{ color: "hsl(60 4% 56%)" }}>DL {job.deadline}</span>
-                                  <span style={{ color: "hsl(60 4% 48%)", fontWeight: 500 }}>{fmt(job.profit)}</span>
-                                </div>
-                              </motion.div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      {result.rejected.length === 0 && (
-                        <p className="font-sans text-xs italic" style={{ color: "hsl(60 4% 62%)" }}>All jobs were accepted — perfect schedule.</p>
-                      )}
                     </div>
+
+
+                    {/* Greedy Decision Log Section */}
+                    {result.decisionLog && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="ceramic rounded-sm p-6 bg-white border border-neutral-300/40 shadow-sm mt-4"
+                      >
+                        <div className="mb-4">
+                          <h3 className="font-serif text-lg font-bold text-neutral-800 flex items-center gap-2">
+                            <Sliders size={16} className="text-[hsl(8,51%,51%)]" />
+                            Greedy Decision Log (Step-by-Step Selection)
+                          </h3>
+                          <p className="font-sans text-xs text-neutral-500 mt-1">
+                            This log details how the greedy algorithm evaluates projects sequentially by contract value. Hover over rows to highlight allocated slots above.
+                          </p>
+                        </div>
+
+                        <div className="overflow-x-auto border border-neutral-200 rounded-sm">
+                          <table className="min-w-full divide-y divide-neutral-200">
+                            <thead className="bg-neutral-50 font-sans text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+                              <tr>
+                                <th className="px-4 py-3 text-left border-r border-neutral-200">Order</th>
+                                <th className="px-4 py-3 text-left border-r border-neutral-200">Client Project Details</th>
+                                <th className="px-3 py-3 text-center border-r border-neutral-200">Contract Value</th>
+                                <th className="px-3 py-3 text-center border-r border-neutral-200">Free Days Before</th>
+                                <th className="px-4 py-3 text-left border-r border-neutral-200">Latest Slot Allocation Check</th>
+                                <th className="px-3 py-3 text-center border-r border-neutral-200">Allocation Status</th>
+                                <th className="px-3 py-3 text-center border-r border-neutral-200">Free Days After</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-neutral-200 font-sans text-xs text-neutral-700">
+                              {result.decisionLog.map((step, idx) => {
+                                const isHovered = hoveredStepId === step.item.id;
+                                
+                                return (
+                                  <tr 
+                                    key={step.item.id}
+                                    onMouseEnter={() => setHoveredStepId(step.item.id)}
+                                    onMouseLeave={() => setHoveredStepId(null)}
+                                    className={`transition-colors duration-150 ${isHovered ? "bg-[hsl(8,51%,51%)/0.04]" : "hover:bg-neutral-50/50"}`}
+                                  >
+                                    <td className="px-4 py-3 border-r border-neutral-200 font-bold text-neutral-400 select-none">
+                                      #{idx + 1}
+                                    </td>
+                                    <td className="px-4 py-3 border-r border-neutral-200">
+                                      <div className="flex flex-col leading-tight">
+                                        <span className="font-serif font-bold text-neutral-800">{step.item.name}</span>
+                                        <span className="text-[10px] text-neutral-400 mt-0.5">
+                                          Deadline: Day {step.item.weight} | Value: {fmt(step.item.value)}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-3 border-r border-neutral-200 text-center font-mono text-neutral-600 font-medium">
+                                      {fmt(step.item.value)}
+                                    </td>
+                                    <td className="px-3 py-3 border-r border-neutral-200 text-center font-serif text-neutral-500">
+                                      {step.remainingCapacityBefore} Days
+                                    </td>
+                                    <td className="px-4 py-3 border-r border-neutral-200 font-mono text-[11px] text-neutral-500">
+                                      {step.decision === "pack" ? (
+                                        <span>Slot found on or before Day {step.item.weight}</span>
+                                      ) : (
+                                        <span className="text-rose-600 font-semibold">No slot available on or before Day {step.item.weight}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-3 border-r border-neutral-200 text-center">
+                                      {step.decision === "pack" ? (
+                                        <span className="px-2 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded uppercase">
+                                          Scheduled
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-1 bg-rose-100 text-rose-800 text-[10px] font-bold rounded uppercase">
+                                          Unscheduled
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-3 border-r border-neutral-200 text-center font-serif font-bold text-neutral-800">
+                                      {step.remainingCapacityAfter} Days
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Scheduling Note */}
+                        <div className="mt-4 p-4 rounded-sm border border-neutral-300/60 bg-amber-50/50 text-xs font-sans leading-relaxed text-neutral-600">
+                          <p className="flex items-center gap-1.5 font-bold text-neutral-800 mb-1">
+                            <Info size={14} className="text-amber-600 flex-shrink-0" />
+                            Strategic Scheduling Note: Latest Slot Strategy
+                          </p>
+                          <p>
+                            The **Greedy Latest Slot** allocation strategy ensures that earliest slots remain open as long as possible. By placing each accepted project on the latest possible day on or before its delivery deadline, the scheduler maintains maximum operational flexibility. This is essential for accommodating tight-deadline, high-value contracts that may arrive later.
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
+
                   </div>
                 )}
+
               </div>
             </div>
+
           </div>
         </Reveal>
       </div>
 
-      {/* Toasts */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 pointer-events-none">
+      {/* Receipt Modal */}
+      <AnimatePresence>
+        {showReceipt && (
+          <motion.div 
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowReceipt(false)}
+          >
+            <motion.div 
+              className="relative w-full max-w-lg bg-[hsl(30,22%,97%)] rounded-sm p-8 shadow-2xl border border-[hsl(38,22%,86%)] text-neutral-800"
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close button */}
+              <button 
+                onClick={() => setShowReceipt(false)}
+                className="absolute top-4 right-4 p-1 hover:opacity-60 transition-opacity print:hidden"
+                style={{ color: "hsl(60 4% 44%)" }}
+              >
+                <X size={18} />
+              </button>
+
+              {/* Modal Header */}
+              <div className="text-center border-b border-[hsl(38,22%,84%)] pb-6 mb-6">
+                <h3 className="font-serif text-2xl font-bold text-neutral-800 uppercase tracking-wide">
+                  Weekly Production Schedule
+                </h3>
+                <p className="font-sans text-[10px] uppercase tracking-widest text-neutral-400 mt-1">
+                  Freelance Creative Studio
+                </p>
+              </div>
+
+              {/* Modal Content */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center text-[10px] font-sans font-semibold text-neutral-400 uppercase tracking-widest mb-2 border-b border-neutral-200 pb-1">
+                  <span>Accepted Projects</span>
+                  <span>Delivery / Revenue</span>
+                </div>
+                
+                <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
+                  {result?.accepted.map((item: any) => (
+                    <div key={item.id} className="flex justify-between items-center py-2 border-b border-[hsl(38,22%,90%)]">
+                      <div>
+                        <p className="font-serif font-bold text-sm text-neutral-800">{item.name}</p>
+                        <p className="font-sans text-[10px] text-neutral-400">Scheduled for Day {item.scheduledDay}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-serif font-bold text-sm" style={{ color: "hsl(8 51% 47%)" }}>{fmt(item.value)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-4 mt-6 border-t border-[hsl(38,22%,84%)] flex justify-between items-center">
+                  <span className="font-serif font-bold text-base text-neutral-800">Total Optimized Revenue</span>
+                  <span className="font-serif font-bold text-xl" style={{ color: "hsl(8 51% 47%)" }}>
+                    {result ? fmt(result.totalValue) : "₹0"}
+                  </span>
+                </div>
+
+                {/* Project Manager Signature Line */}
+                <div className="pt-12 mt-8 flex justify-between items-end">
+                  <div className="text-left font-sans text-xs text-neutral-400 leading-tight">
+                    <p>Date: {new Date().toLocaleDateString('en-IN')}</p>
+                    <p>Status: Approved</p>
+                  </div>
+                  <div className="text-right w-44">
+                    <div className="border-b border-neutral-400 h-6 mb-1"></div>
+                    <p className="font-sans text-[9px] uppercase tracking-widest text-neutral-500">
+                      Project Manager Signature
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 flex justify-end gap-3 print:hidden">
+                <button
+                  onClick={() => window.print()}
+                  className="px-4 py-2 text-xs font-sans font-medium rounded-sm border border-[hsl(38,22%,80%)] hover:bg-neutral-100 transition-colors"
+                  style={{ color: "hsl(60,4%,44%)" }}
+                >
+                  Print Schedule
+                </button>
+                <button
+                  onClick={() => setShowReceipt(false)}
+                  className="tc-block px-5 py-2 rounded-sm font-sans text-xs font-semibold text-white"
+                >
+                  Close
+                </button>
+              </div>
+
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* History Modal */}
+      <HistoryModal
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        token={token}
+      />
+
+      {/* Toast notifications */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 pointer-events-none print:hidden">
         <AnimatePresence>
           {toasts.map(t => (
             <motion.div key={t.id}
@@ -1348,18 +1903,18 @@ function Footer() {
               <div className="w-7 h-7 rounded-sm tc-block flex items-center justify-center">
                 <Layers size={13} style={{ color: "hsl(30 40% 97%)" }} strokeWidth={2} />
               </div>
-              <span className="font-serif font-bold text-lg" style={{ color: "hsl(120 2% 17%)" }}>JobOptimizer</span>
+              <span className="font-serif font-bold text-lg" style={{ color: "hsl(120 2% 17%)" }}>Job Scheduling Optimization</span>
             </div>
             <p className="font-sans text-xs leading-relaxed" style={{ color: "hsl(60 4% 54%)" }}>
-              A premium Greedy Job Scheduling tool. All profits in ₹ Indian Rupees. Runs entirely in your browser — no server, no data sent anywhere.
+              A premium Greedy Job Scheduling Optimization tool for Freelance Studios. Runs entirely in your browser — no server, no data sent anywhere.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-16 gap-y-3">
             {[
-              { label: "Algorithm",   val: "Greedy"            },
-              { label: "Complexity",  val: "O(n log n)"        },
-              { label: "Currency",    val: "₹ Indian Rupees"  },
-              { label: "Runs in",     val: "Your browser"     },
+              { label: "Algorithm",   val: "Greedy Latest Slot Allocation" },
+              { label: "Complexity",  val: "O(n log n)" },
+              { label: "Currency",    val: "₹ Indian Rupees" },
+              { label: "Execution",   val: "Client-side JS" },
             ].map(s => (
               <div key={s.label} className="flex flex-col">
                 <span className="font-sans text-[10px] tracking-widest uppercase font-semibold mb-0.5" style={{ color: "hsl(60 4% 58%)" }}>{s.label}</span>
@@ -1380,9 +1935,16 @@ function Footer() {
 // ═══════════════════════════════════════════════════════════
 //  ROOT
 // ═══════════════════════════════════════════════════════════
-export default function Optimizer() {
+export default function Optimizer({
+  token,
+  onLogout,
+}: {
+  token: string;
+  onLogout?: () => void;
+}) {
   const [activeSection, setActiveSection] = useState("hero");
   const [sparks, setSparks] = useState<Spark[]>([]);
+  const [algorithm, setAlgorithm] = useState<"fractional" | "dp">("fractional");
 
   const burst = useCallback((x: number, y: number, count = 10) => {
     const SPARK_COLORS = ["hsl(8,55%,55%)", "hsl(35,70%,62%)", "hsl(14,55%,65%)", "hsl(25,65%,72%)", "hsl(38,60%,70%)"];
@@ -1403,7 +1965,6 @@ export default function Optimizer() {
   const scrollTo = (id: string) =>
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  // Section observer for side nav
   useEffect(() => {
     const obs: IntersectionObserver[] = [];
     SECTIONS.forEach(id => {
@@ -1414,6 +1975,7 @@ export default function Optimizer() {
         { threshold: 0.35 }
       );
       o.observe(el);
+      obs.push(o);
       obs.push(o);
     });
     return () => obs.forEach(o => o.disconnect());
@@ -1429,13 +1991,10 @@ export default function Optimizer() {
       <SideNav active={activeSection} />
 
       <div className="relative z-10">
-        <Navbar onScrollTo={scrollTo} />
+        <Navbar onScrollTo={scrollTo} onLogout={onLogout} />
         <Hero onScrollTo={scrollTo} />
-        <Marquee />
-        <HowItWorks />
-        <Marquee reverse />
-        <AlgorithmSection />
-        <OptimizerApp />
+        <AlgorithmSection algorithm={algorithm} setAlgorithm={setAlgorithm} />
+        <OptimizerApp algorithm={algorithm} setAlgorithm={setAlgorithm} token={token} />
         <Footer />
       </div>
     </SparkCtx.Provider>

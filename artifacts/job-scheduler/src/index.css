@@ -60,7 +60,6 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    cursor: none;
   }
 
   body {
@@ -79,7 +78,7 @@
   input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   input[type=number] { -moz-appearance: textfield; }
 
-  button, a, [role="button"], input, label, select { cursor: none; }
+  button, a, [role="button"], input, label, select { cursor: pointer; }
 
   ::selection {
     background: hsl(8 51% 51% / 0.18);
