@@ -18,7 +18,6 @@ const PORT = process.env.PORT || 4000;
 app.use(
   cors({
     origin: process.env.CLIENT_URL || "job-schedule-optimization.vercel.app",
-    https:"//job-schedule-optimization-44f75gy8h-impanaas25-3139s-projects.vercel.app"
     credentials: true,
   })
 );
