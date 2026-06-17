@@ -15,9 +15,23 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // ── Middleware ────────────────────────────────────────────
+import cors from "cors";
+
+const allowedOrigins = [
+  "https://job-schedule-optimization.vercel.app",
+  "https://job-schedule-optimization-44f75gy8h-impanaas25-3139s-projects.vercel.app"
+];
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "https://job-schedule-optimization.vercel.app",
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log("Blocked by CORS:", origin);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
