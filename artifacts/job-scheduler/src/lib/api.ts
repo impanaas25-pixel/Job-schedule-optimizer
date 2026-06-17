@@ -13,8 +13,8 @@ export class ApiError extends Error {
   constructor(status: number, body: Record<string, unknown>) {
     super(
       (body.message as string) ||
-        (body.error as string) ||
-        `API error ${status}`
+      (body.error as string) ||
+      `API error ${status}`
     );
     this.status = status;
     this.body = body;
@@ -23,7 +23,7 @@ export class ApiError extends Error {
 }
 
 // Base URL — empty string so Vite proxy handles /api/* forwarding
-const BASE = "";
+const BASE = "https://job-schedule-optimizer.onrender.com";
 
 async function apiFetch<T>(
   endpoint: string,
