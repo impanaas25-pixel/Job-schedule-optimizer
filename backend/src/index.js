@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 4000;
 // ── Middleware ────────────────────────────────────────────
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "job-schedule-optimization.vercel.app",
+    origin: process.env.CLIENT_URL || "https://job-schedule-optimization.vercel.app",
     credentials: true,
   })
 );
